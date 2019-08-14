@@ -4,7 +4,10 @@ import json
 import numpy as np
 import pandas as pd
 import argparse
+from tqdm import tqdm
 from astropy.wcs import WCS
+from astropy import log
+log.setLevel('ERROR')
 
 parser = argparse.ArgumentParser(
     description=(
@@ -109,29 +112,30 @@ def get_fits_location(gal):
 
 
 galaxy_info = pd.Series([])
-for subject_id in subjects.index.values:
-    # Grab the metadata of the subject we are working on
-    subject = subjects.loc[subject_id]
-    # And the NSA data for the galaxy (if it's a galaxy with NSA data,
-    # otherwise throw an error)
-    if metadata.loc[subject_id].get('NSA id', False) is not np.nan:
-        try:
-            gal = df_nsa.drop_duplicates(
-                subset='NSAID'
-            ).set_index(
-                'NSAID',
-                drop=False
-            ).loc[
-                int(metadata.loc[subject_id]['NSA id'])
-            ]
-        except KeyError:
-            gal = {}
-            raise KeyError(
-                'Metadata does not contain valid NSA id (probably an older galaxy)'
-            )
-        fits_name = get_fits_location(gal)
-        angle = get_angle(gal, fits_name, np.array((512, 512))) % 180
-        gal['angle'] = angle
-        galaxy_info.loc[subject_id] = gal
+with tqdm(subjects.index.values, desc='Iterating over subjects') as bar:
+    for subject_id in bar:
+        # Grab the metadata of the subject we are working on
+        subject = subjects.loc[subject_id]
+        # And the NSA data for the galaxy (if it's a galaxy with NSA data,
+        # otherwise throw an error)
+        if metadata.loc[subject_id].get('NSA id', False) is not np.nan:
+            try:
+                gal = df_nsa.drop_duplicates(
+                    subset='NSAID'
+                ).set_index(
+                    'NSAID',
+                    drop=False
+                ).loc[
+                    int(metadata.loc[subject_id]['NSA id'])
+                ]
+            except KeyError:
+                gal = {}
+                raise KeyError(
+                    'Metadata does not contain valid NSA id (probably an older galaxy)'
+                )
+            fits_name = get_fits_location(gal)
+            angle = get_angle(gal, fits_name, np.array((512, 512))) % 180
+            gal['angle'] = angle
+            galaxy_info.loc[subject_id] = gal
 
 galaxy_info.apply(pd.Series).to_csv('gal-metadata.csv')

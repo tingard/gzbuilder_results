@@ -39,7 +39,7 @@ classifications = pd.read_csv(
 subjects = pd.read_csv(
     get_path('galaxy-builder-subjects.csv')
 ).drop_duplicates(subset='subject_id').set_index('subject_id', drop=False)
-metadata = subjects.metadata.apply(json.loads)
+metadata = subjects.metadata.apply(json.loads).apply(pd.Series)
 
 # # Some galaxies were montaged when created. Create a list of their coordinates
 # # for use later
