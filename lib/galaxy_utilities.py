@@ -3,15 +3,15 @@ is used to obtain fitting data from galaxy builder metadata and subject files.
 """
 
 import os
-from tempfile import NamedTemporaryFile
+# from tempfile import NamedTemporaryFile
 import numpy as np
 import pandas as pd
 import json
-import requests
+# import requests
 from PIL import Image
-from astropy.wcs import WCS
-from gzbuilder_analysis.spirals import get_drawn_arms as __get_drawn_arms
-from gzbuilder_analysis.spirals import deprojecting as dpj
+# from astropy.wcs import WCS
+import gzbuilder_analysis.spirals as spirals
+from gzbuilder_analysis.spirals.deprojecting import deproject_array
 from shapely.geometry import box, Point
 from shapely.affinity import rotate as shapely_rotate, scale as shapely_scale
 
@@ -23,6 +23,8 @@ def get_path(s):
         os.path.abspath(os.path.dirname(__file__)),
         s
     )
+
+
 try:
     df_nsa = pd.read_pickle(get_path('df_nsa.pkl'))
 except FileNotFoundError:
@@ -118,7 +120,7 @@ def get_drawn_arms(subject_id, classifications=classifications):
         qs = ' or '.join('subject_ids == {}'.format(i) for i in subject_id)
     except TypeError:
         qs = 'subject_ids == {}'.format(subject_id)
-    return __get_drawn_arms(
+    return spirals.get_drawn_arms(
         classifications.query(qs)
     )
 
@@ -164,14 +166,14 @@ def get_image(subject_id):
 
 
 def get_deprojected_image(subject_id, ba, angle):
-    return dpj.deproject_array(
+    return deproject_array(
         np.array(get_image(subject_id)),
         angle, ba,
     )
 
 
 def get_diff_data(subject_id):
-    diff_path = 'subject_data/{}/diff.json'.format(subject_id)
+    diff_path = 'subject_data/{}/difference.json'.format(subject_id)
     with open(get_path(diff_path)) as f:
         diff = json.load(f)
     return {

@@ -1,2 +1,6 @@
 lib/__pycache__
 lib/subject_data
+lib/fitting_metadata.pkl
+lib/df_nsa.pkl
+lib/lackner_nb1.csv
+lib/lackner_nb4.csv

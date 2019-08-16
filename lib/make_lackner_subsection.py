@@ -17,15 +17,11 @@ parser.add_argument('--nb1', metavar='/path/to/file.dat', default='',
                     type=str, help='Location of Lackner nb1 dat file')
 parser.add_argument('--nb4', '-s', metavar='/path/to/file.dat', default='',
                     type=str, help='Location of Lackner nb4 dat file')
-parser.add_argument('--progress', '-P', action='store_true',
-                    help='Whether to use a progress bar')
 
 args = parser.parse_args()
 
 sid_list = np.loadtxt('subject-id-list.csv', dtype='u8')
-gzb_c_df = pd.DataFrame(
-    gu.meta_map
-).T[['ra', 'dec']].loc[sid_list].dropna().astype(float)
+gzb_c_df = gu.metadata[['ra', 'dec']].loc[sid_list].dropna().astype(float)
 
 gzb_coordinates = SkyCoord(
     gzb_c_df.values * u.degree

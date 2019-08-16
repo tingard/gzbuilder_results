@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import numpy as np
@@ -6,7 +7,7 @@ import argparse
 from copy import deepcopy
 import gzbuilder_analysis.parsing as parsing
 import gzbuilder_analysis.fitting as fitting
-
+from gzbuilder_analysis.config import SLIDER_FITTING_TEMPLATE
 # ## Optimization
 #
 # We perform fitting on the models created earlier. Parameters fit are
@@ -37,8 +38,12 @@ parser.add_argument('--index', '-i', metavar='N', default=-1, type=int,
                     help='Subject id index (from liv/subject-id-list.csv)')
 parser.add_argument('--subject', '-s', metavar='N', default=-1, type=int,
                     help='Subject id')
+parser.add_argument('--output', '-O', metavar='/path/to/output',
+                    default='tuned_models',
+                    help='Whether to use a progress bar')
 parser.add_argument('--progress', '-P', action='store_true',
                     help='Whether to use a progress bar')
+
 
 args = parser.parse_args()
 if args.index == -1 and args.subject == -1:
@@ -77,6 +82,10 @@ def reset_spiral_intensity(s):
     return [points, new_params]
 
 
+# ensure the output dir exists
+if not os.path.isdir(args.output):
+    os.makedirs(args.output)
+
 # Optimization of Aggregate model
 # create a model object
 print('Optimizing aggregate model')
@@ -89,7 +98,9 @@ agg_model = model.copy_with_new_model({
         reset_spiral_intensity(s) for s in deepcopy(model['spiral'])
     ]),
 })
-new_model, res = fitting.fit(agg_model, progress=args.progress)
+# fit only the slider values
+new_model, res = fitting.fit(agg_model, progress=args.progress,
+                             template=SLIDER_FITTING_TEMPLATE)
 
 if res['success']:
     new_model_ = model.copy_with_new_model(new_model)
@@ -98,7 +109,12 @@ if res['success']:
     print('Aggregate Loss changed from {:.4e} to {:.4e}'.format(
         original_loss, final_loss
     ))
-    with open('fitted_agg_models/{}.json'.format(sid), 'w') as f:
+    outfile = os.path.join(
+        args.output,
+        'fitted_agg_models',
+        '{}.json'.format(sid)
+    )
+    with open(outfile, 'w') as f:
         json_model = parsing.make_json(new_model)
         json.dump(json_model, f)
 else:
@@ -116,6 +132,11 @@ if res['success']:
     print('BI Loss changed from {:.4e} to {:.4e}'.format(
         original_loss, final_loss
     ))
+    outfile = os.path.join(
+        args.output,
+        'fitted_agg_models',
+        '{}.json'.format(sid)
+    )
     with open('fitted_bi_models/{}.json'.format(sid), 'w') as f:
         json_model = parsing.make_json(new_model)
         json.dump(json_model, f)
