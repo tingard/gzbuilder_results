@@ -1,3 +1,9 @@
+# This script requires a number of
+#
+#
+#
+#
+
 import os
 import sys
 import json
@@ -9,12 +15,25 @@ from astropy.wcs import WCS
 from astropy import log
 log.setLevel('ERROR')
 
+
+this_file_location = os.path.dirname(os.path.abspath(__file__))
+
 parser = argparse.ArgumentParser(
     description=(
-        'Generate subsection of the NSA catalogue used by galaxy_utilities'
+        'Generate subsection of the NSA catalogue used by galaxy_utilities. '
+        'Requires make_nsa_subsection.py to have been run, and the output '
+        'df-nsa.pkl to be present in the same folder as this file. '
+        'Also requires a Zooniverse Subject export, and the locations of the '
+        'FITS files used in the subject creation process (fits headers are '
+        'required for rotations)'
     )
 )
-parser.add_argument('--subjects', metavar='/path/to/subjects.csv', required=True,
+default_subjects_csv_location = os.path.join(
+    this_file_location,
+    'galaxy-builder-subjects.csv'
+)
+parser.add_argument('--subjects', metavar='/path/to/subjects.csv',
+                    default=default_subjects_csv_location,
                     type=str, help='Location of Zooniverse Subject export')
 
 parser.add_argument('--montages', metavar='/path/to/montageOutputs',

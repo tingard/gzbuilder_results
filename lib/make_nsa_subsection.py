@@ -1,3 +1,5 @@
+# Takes the NASA-Sloan Atlas in FITS format, extracts certain columns and saves
+# as a pandas-friendly pickle file.
 from astropy.io import fits
 from astropy.table import Table
 from tqdm import tqdm
@@ -8,7 +10,8 @@ import argparse
 
 parser = argparse.ArgumentParser(
     description=(
-        'Generate subsection of the NSA catalogue used by galaxy_utilities'
+        ' Takes the NASA-Sloan Atlas in FITS format, extracts certain columns
+        'and saves as a pandas-friendly pickle file.'
     )
 )
 parser.add_argument('--catalog', metavar='/path/to/nsa_file.fits', required=True,

@@ -23,10 +23,15 @@ from gzbuilder_analysis.config import SLIDER_FITTING_TEMPLATE
 #
 # For the aggregate model we first fit without spiral arms, then introduce low-brightness arms and fit fully.
 
-
-sid_list = np.loadtxt('lib/subject-id-list.csv', dtype='u8')
-diff_data_df = pd.read_pickle('lib/diff-data.pkl')
-
+loc = os.path.abspath(os.path.dirname(__file__))
+lib = os.path.join(loc, 'lib')
+sid_list = np.loadtxt(
+    os.path.join(lib, 'subject-id-list.csv'),
+    dtype='u8'
+)
+diff_data_df = pd.read_pickle(
+    os.path.join(lib, 'fitting_metadata.pkl')
+)
 
 parser = argparse.ArgumentParser(
     description=(
@@ -56,23 +61,19 @@ else:
     sid = sid_list[args.index]
 
 print('Working on', sid)
-AGGREGATE_LOCATION = 'lib/aggregation_results.pickle'
-BEST_INDIVIDUAL_LOCATION = 'lib/best_individual.pickle'
-FITTED_MODEL_LOCATION = 'lib/fitted_models.pickle'
+AGGREGATE_LOCATION = os.path.join(lib, 'aggregation_results.pickle')
+BEST_INDIVIDUAL_LOCATION = os.path.join(lib, 'best_individual.pickle')
 
 aggregation_results = pd.read_pickle(AGGREGATE_LOCATION)
 best_indiv = pd.read_pickle(BEST_INDIVIDUAL_LOCATION)
 
 
 def make_model(subject_id, m):
-    try:
-        diff_data = diff_data_df.loc[subject_id]
-        psf = diff_data['psf']
-        pixel_mask = 1 - np.array(diff_data['mask'])[::-1]
-        galaxy_data = np.array(diff_data['imageData'])[::-1]
-        return fitting.Model(m, galaxy_data, psf=psf, pixel_mask=pixel_mask)
-    except ZeroDivisionError:
-        return 1E7
+    diff_data = diff_data_df.loc[subject_id]
+    psf = diff_data['psf']
+    pixel_mask = np.array(diff_data['pixel_mask'])[::-1]
+    galaxy_data = np.array(diff_data['galaxy_data'])[::-1]
+    return fitting.Model(m, galaxy_data, psf=psf, pixel_mask=pixel_mask)
 
 
 def reset_spiral_intensity(s):
@@ -83,62 +84,89 @@ def reset_spiral_intensity(s):
 
 
 # ensure the output dir exists
+agg_output_folder = os.path.join(args.output, 'agg')
+bi_output_folder = os.path.join(args.output, 'bi')
 if not os.path.isdir(args.output):
     os.makedirs(args.output)
+if not os.path.isdir(agg_output_folder):
+    os.makedirs(agg_output_folder)
+if not os.path.isdir(bi_output_folder):
+    os.makedirs(bi_output_folder)
+
 
 # Optimization of Aggregate model
-# create a model object
 print('Optimizing aggregate model')
-model = make_model(sid, aggregation_results.loc[sid].Model)
-original_loss = fitting.loss(model.render(), model.data, model.pixel_mask)
+agg_model = make_model(sid, aggregation_results.loc[sid].Model)
+original_agg_loss = fitting.loss(agg_model.render(), agg_model.data,
+                                 agg_model.pixel_mask)
 # reset spiral intensity to 0.01
-agg_model = model.copy_with_new_model({
-    **deepcopy(model._model),
+agg_model = agg_model.copy_with_new_model({
+    **deepcopy(agg_model._model),
     'spiral': np.array([
-        reset_spiral_intensity(s) for s in deepcopy(model['spiral'])
+        reset_spiral_intensity(s) for s in agg_model['spiral']
     ]),
 })
 # fit only the slider values
-new_model, res = fitting.fit(agg_model, progress=args.progress,
-                             template=SLIDER_FITTING_TEMPLATE)
+tuned_agg_model_dict, res = fitting.fit(
+    agg_model,
+    progress=args.progress,
+    template=SLIDER_FITTING_TEMPLATE
+)
 
 if res['success']:
-    new_model_ = model.copy_with_new_model(new_model)
-    final_loss = fitting.loss(new_model_.render(), new_model_.data,
-                              new_model_.pixel_mask)
-    print('Aggregate Loss changed from {:.4e} to {:.4e}'.format(
-        original_loss, final_loss
-    ))
-    outfile = os.path.join(
-        args.output,
-        'fitted_agg_models',
-        '{}.json'.format(sid)
+    tuned_slider_agg_model = agg_model.copy_with_new_model(tuned_agg_model_dict)
+    tuned_slider_agg_loss = fitting.loss(
+        tuned_slider_agg_model.render(),
+        tuned_slider_agg_model.data,
+        tuned_slider_agg_model.pixel_mask
     )
-    with open(outfile, 'w') as f:
-        json_model = parsing.make_json(new_model)
-        json.dump(json_model, f)
+    # fit all parameters
+    tuned_agg_model_dict, res = fitting.fit(
+        tuned_slider_agg_model,
+        progress=args.progress
+    )
+    if res['success']:
+        tuned_agg_model = agg_model.copy_with_new_model(tuned_agg_model_dict)
+        final_agg_loss = fitting.loss(
+            tuned_agg_model.render(),
+            tuned_agg_model.data,
+            tuned_agg_model.pixel_mask
+        )
+        print('Aggregate Loss changed from {:.4e} to {:.4e} to {:.4e}'.format(
+            original_agg_loss, tuned_slider_agg_loss, final_agg_loss
+        ))
+        outfile = os.path.join(
+            agg_output_folder,
+            '{}.json'.format(sid)
+        )
+        with open(outfile, 'w') as f:
+            json_model = parsing.make_json(tuned_agg_model_dict)
+            json.dump(json_model, f)
+    else:
+        print('Fitting failure on 2nd fit:', res['message'])
 else:
-    print('Fitting failure:', res['message'])
+    print('Fitting failure on 1st fit:', res['message'])
+
+
 
 # Optimization of Best individual model
 print('Optimizing best individual model')
-model = make_model(sid, best_indiv.loc[sid].Model)
-original_loss = fitting.loss(model.render(), model.data, model.pixel_mask)
-new_model, res = fitting.fit(model, progress=args.progress)
+bi_model = make_model(sid, best_indiv.loc[sid].Model)
+original_bi_loss = fitting.loss(bi_model.render(), bi_model.data, bi_model.pixel_mask)
+tuned_bi_model_dict, res = fitting.fit(bi_model, progress=args.progress)
 if res['success']:
-    new_model_ = model.copy_with_new_model(new_model)
-    final_loss = fitting.loss(new_model_.render(), new_model_.data,
-                              new_model_.pixel_mask)
+    tuned_bi_model = bi_model.copy_with_new_model(tuned_bi_model_dict)
+    final_bi_loss = fitting.loss(tuned_bi_model.render(), tuned_bi_model.data,
+                              tuned_bi_model.pixel_mask)
     print('BI Loss changed from {:.4e} to {:.4e}'.format(
-        original_loss, final_loss
+        original_bi_loss, final_bi_loss
     ))
     outfile = os.path.join(
-        args.output,
-        'fitted_agg_models',
+        bi_output_folder,
         '{}.json'.format(sid)
     )
-    with open('fitted_bi_models/{}.json'.format(sid), 'w') as f:
-        json_model = parsing.make_json(new_model)
+    with open(outfile, 'w') as f:
+        json_model = parsing.make_json(tuned_bi_model_dict)
         json.dump(json_model, f)
 else:
     print('Fitting failure:', res['message'])
