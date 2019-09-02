@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --job-name=volunteer_losses
+#SBATCH --output=/users/tingard/volunteer_losses_logs/slurm-%A_%a.out
+#SBATCH -p sciama4.q
+# run using
+# sbatch --array=0-295 job__volunteer_losses.job
+source ~/modules
+
+# get subject id from index
+SID=$(SID_N=$(expr $SLURM_ARRAY_TASK_ID + 1) && sed "${SID_N}q;d" ~/gzbuilder_results/lib/subject-id-list.csv)
+
+# make sure the output directory exists
+mkdir -p /users/tingard/gzbuilder_results/output_files/volunteer_losses
+# define the output file path
+OUTPUT_NB="/users/tingard/gzbuilder_results/output_files/volunteer_losses/${SID}.ipynb"
+
+# execute
+echo "Working on $SID"
+papermill /users/tingard/gzbuilder_results/input_files/volunteer_losses.ipynb $OUTPUT_NB \
+          -p subject_id $SID

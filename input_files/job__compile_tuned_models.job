@@ -1,0 +1,7 @@
+#!/bin/bash
+#SBATCH -p sciama4.q
+source ~/modules
+papermill ~/gzbuilder_results/input_files/compile_tuned_models.ipynb \
+          ~/gzbuilder_results/output_files/compile_tuned_models.ipynb \
+          -p AGG_MODEL_PATH ~/gzbuilder_results/output_files/tuned_models/agg \
+          -p BI_MODEL_PATH ~/gzbuilder_results/output_files/tuned_models/bi

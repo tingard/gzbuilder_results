@@ -30,22 +30,26 @@ Once these files have been created, model tuning can be done using the `/tune_mo
 
 The `tune_model.py` script makes use of `gzbuilder_analysis.fitting` to instantiate `Model` objects, allowing efficient rendering of galaxy models. If you wish to perform your own optimization, we suggest using `gzbuilder_analysis.fitting` either directly as a reference, as it is non-trivial to compare galaxy builder models to the data, due to a couple of poor choices during the Zooniverse project creation process.
 
-A bash script to perform model calculation, tuning and compilation on a Slurm-based HPC therefore looks something like this:
+A bash script to perform model calculation, tuning and compilation on a Slurm-based HPC could therefore look something like this:
 
 ```
 NSID=$(expr $(cat lib/subject-id-list.csv | wc -l) - 1)
 
-srun papermill input_files/make_agg_bi_models.ipynb \
-               output_files/make_agg_bi_models.ipynb
+model_calculation_job_id=$(sbatch input_files/job__make_agg_bi_models.job |  tr -dc '0-9')
 
-tuning_jid=$(sbatch --array=0-$NSID input_files/job__tune_models.job)
+echo "Waiting for job $model_calculation_job_id to perform tuning"
 
-srun papermill input_files/compile_tuned_models.ipynb \
-               output_files/compile_tuned_models.ipynb \
-               --dependency=afterany:$tuning_jid
+tuning_job_id=$(sbatch --array=0-$NSID --dependency=afterany:$model_calculation_job_id \
+                       input_files/job__tune_models.job |  tr -dc '0-9')
+
+echo "Waiting for job $tuning_job_id to compile tuned models"
+
+sbatch -q sciama4.q --dependency=afterok:$tuning_job_id input_files/job__compile_tuned_models.job
 ```
 
-Where `lib/subject-id-list.csv` is the newline-separated list of zooniverse subject ids to work on.
+Where `lib/subject-id-list.csv` is the newline-separated list of zooniverse subject ids to work on. Note that each job script should be tailored to your environment to ensure files are in the right place / queues are correctly named!
+
+
 ## Performing analysis
 
 Once models have been obtained

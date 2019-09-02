@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH -p sciama4.q
 source ~/modules
-papermill ~/gzbuilder_results/make_agg_bi_models.ipynb ~/gzbuilder_results/output_notebooks/make_agg_bi_models.ipynb \
-  -p AGGREGATE_LOCATION ~/gzbuilder_results/lib/aggregation_results.pickle \
-  -p BEST_INDIVIDUAL_LOCATION ~/gzbuilder_results/lib/best_individual.pickle
+papermill ~/gzbuilder_results/input_files/make_agg_bi_models.ipynb \
+          ~/gzbuilder_results/output_files/make_agg_bi_models.ipynb \
+          -p AGGREGATE_LOCATION ~/gzbuilder_results/lib/aggregation_results.pickle \
+          -p BEST_INDIVIDUAL_LOCATION ~/gzbuilder_results/lib/best_individual.pickle
