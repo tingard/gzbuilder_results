@@ -10,7 +10,7 @@ import tqdm as tqdm
 from datetime import datetime
 
 
-### Configuration
+# Configuration
 # What keys should be grabbed from the galaxy metadata?
 METADATA_KEYS = ['ra', 'dec', 'Run', 'Field', 'Rerun', 'Camcol',
                  'NSA id', 'redshift', 'SDSS dr7 id']
@@ -19,15 +19,18 @@ RENAME_MAP = {
     'SDSS dr7 id': 'DR7OBJID',
 }
 
-### Loading in required files
+# Loading in required files
 sid_list_values = np.loadtxt('lib/subject-id-list.csv', dtype='u8')
 aggregation_results = pd.read_pickle('lib/aggregation_results.pickle')
 best_models = pd.read_pickle('lib/best_individual.pickle')
 fitted_models = pd.read_pickle('lib/fitted_models.pickle')
 
 
-### Preprocessing and feature extraction
-sid_list = pd.Series(sid_list_values, index=sid_list_values).rename('subject_id')
+# Preprocessing and feature extraction
+sid_list = pd.Series(
+    sid_list_values,
+    index=sid_list_values
+).rename('subject_id')
 
 classifications = gu.classifications[
     np.isin(gu.classifications.subject_ids, sid_list)
@@ -44,12 +47,15 @@ metadata = pd.concat(
 diff_data = sid_list.apply(gu.get_diff_data).apply(pd.Series)
 size_diffs = diff_data.eval('width / imageWidth')
 
+
 def make_all_model_df(output=None):
     """Produces a CSV containing all models created by volunteers, scaled to
     Sloan pixels and in units of nanomaggies
     """
     # need to match index of models (which is classification ID)
-    model_metadata = metadata.reindex(classifications.subject_ids).set_index(annotations.index)
+    model_metadata = metadata.reindex(
+        classifications.subject_ids
+    ).set_index(annotations.index)
     models = pd.Series([
         parsing.parse_annotation(*i)
         for i in zip(
@@ -72,7 +78,8 @@ def make_all_model_df(output=None):
         model_metadata.rename(RENAME_MAP, axis=1),
     ), axis=1)
 
-    # we don't want to include the classification ID in the CSV, so drop the index
+    # we don't want to include the classification ID in the CSV, so drop
+    # the index
     output = (
         output if output is not None
         else 'GZB_ALL_MODEL_CATALOG_{}.csv'.format(
@@ -100,14 +107,14 @@ def make_compiled_model_df(output=None):
 
     spiral_info = aggregation_results.Arms.apply(get_spiral_info)
     models_df = pd.concat((
-        best_models.Model.apply(parsing.make_json).apply(json.dumps)\
+        best_models['Model'].apply(parsing.make_json).apply(json.dumps)
             .reindex(sid_list.index).rename('best_individual_model'),
-        fitted_models['agg'].apply(parsing.make_json).apply(json.dumps)\
+        fitted_models['agg'].apply(parsing.make_json).apply(json.dumps)
             .reindex(sid_list.index).rename('aggregate_model'),
         aggregate_errors,
-        fitted_models.agg_loss.reindex(sid_list.index)\
+        fitted_models.agg_loss.reindex(sid_list.index)
             .rename('tuned_aggregate_mse'),
-        fitted_models.bi_loss.reindex(sid_list.index)\
+        fitted_models.bi_loss.reindex(sid_list.index)
             .rename('tuned_best_individual_mse'),
         spiral_info.reindex(sid_list.index),
         metadata.reindex(sid_list.index).rename(RENAME_MAP, axis=1),
