@@ -1,8 +1,6 @@
 # Takes the NASA-Sloan Atlas in FITS format, extracts certain columns and saves
 # as a pandas-friendly pickle file.
-from astropy.io import fits
 from astropy.table import Table
-from tqdm import tqdm
 import pandas as pd
 import os
 import argparse
@@ -10,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser(
     description=(
-        ' Takes the NASA-Sloan Atlas in FITS format, extracts certain columns
+        ' Takes the NASA-Sloan Atlas in FITS format, extracts certain columns'
         'and saves as a pandas-friendly pickle file.'
     )
 )
@@ -23,12 +21,12 @@ this_file_location = os.path.dirname(os.path.abspath(__file__))
 nsa_catalog = Table.read(args.catalog, format='fits')
 
 nsa_keys = (
-    'NSAID', 'ISDSS', 'INED', 'IAUNAME', # identifiers
-    'RA', 'DEC', 'Z', 'ZDIST', # position
-    'SERSIC_BA', 'SERSIC_PHI', # sersic photometry
-    'PETRO_THETA', # azimuthally averaged petrosean radius
-    'PETRO_BA90', 'PETRO_PHI90', # petrosean photometry at 90% light radius
-    'PETRO_BA50', 'PETRO_PHI50', # ... at 50% light radius
+    'NSAID', 'ISDSS', 'INED', 'IAUNAME',  # identifiers
+    'RA', 'DEC', 'Z', 'ZDIST',  # position
+    'SERSIC_BA', 'SERSIC_PHI',  # sersic photometry
+    'PETRO_THETA',  # azimuthally averaged petrosean radius
+    'PETRO_BA90', 'PETRO_PHI90',  # petrosean photometry at 90% light radius
+    'PETRO_BA50', 'PETRO_PHI50',  # ... at 50% light radius
     'RUN', 'CAMCOL', 'FIELD', 'RERUN',
     'ELPETRO_MASS', 'SERSIC_MASS',
 )
