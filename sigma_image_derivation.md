@@ -6,9 +6,12 @@ We want a way of taking multiple frames containing (at least part of) a target e
 
 For each pixel, we have
 
-$$\frac{I}{C} = \frac{n}{g} - S,$$
+$$\frac{I}{C} = \frac{n}{g} - S + V,$$
 
-where $I$ represents the sky-subtracted, corrected image (nanomaggies), $C$ reprents the calibration image, $n$ is the number of electrons captured, $g$ is the gain and $S$ is the Sky value (data units).
+where $I$ represents the sky-subtracted, corrected image (nanomaggies), $C$ reprents the calibration image, $n$ is the number of electrons captured, $g$ is the gain, $S$ is the Sky value (data units) and $V$ is the dark current, $V = 0 ± \sqrt{v}$ ($v$ being the dark variance).
+
+> Coleman: *SDSS lumps in the read-out noise (the thermal noise in the wires of the electronics on the telescope) with the dark variance... [this is a good reference textbook](http://hildaandtrojanasteroids.net/wrccd22oct06.pdf). Bias is a zero sec exposure, dark is a 0 light exposure of the same length as the observation. These are combined with the "read noise" to form the dark variance provided by SDSS*
+
 
 Given Poisson error,
 
@@ -16,47 +19,50 @@ $$\sigma_n = \sqrt{n}.$$
 
 If we stack images, given $N$ images of a pixel
 
-$$n_\mathrm{total} = \sum_i{n_i} = \sum_i g_i\left(\frac{I_i}{C_i} + S_i\right),$$
+$$n_\mathrm{total} = \sum_i{n_i} = \sum_i g_i\left(\frac{I_i}{C_i} + S_i - V_i\right),$$
 
-$$\sigma_{n_\mathrm{total}}^2 = \sum_{i}\frac{g_i}{C_i}I_i + \sum_i{g_i S_i}.$$
+$$ = \sum_{i}\frac{g_i}{C_i}I_i + \sum_i{g_i \left(S_i - V_i\right)} = \sigma_{n_\mathrm{total}}^2.$$
 
+This is ideal, and is the level that many fitting software packages work at, we, however, want to return to working in units of nanomaggies on a stacked image, and so further calculation is needed:
 
-Meaning
+$$I = \frac{1}{N}\sum_i I_i,$$
 
-$$\sum_i\frac{g_i}{C_i}I_i = \sum_i{n_i} - \sum_i{g_i S_i}.$$
+$$I = \frac{1}{N}\sum_i C_i\left(\frac{n_i}{g_i} - S_i + V_i\right),$$
 
-Assuming $g_i$ and $C_i$ are nearly constant gives
+And so 
+$$\sigma_I^2 = \frac{1}{N^2}\sum_i\frac{C_i^2}{g_i^2}\sigma_{n_i}^2 + \frac{1}{N^2}\sum_i C_i^2 \sigma_{S_i}^2 + \frac{1}{N^2}\sum_i C_i^2 \sigma_{V_i}^2.$$
 
-$$\frac{\left<g\right>}{\left<C\right>}\sum_i{I_i} = \sum_i{n_i} -\left<g\right>\sum_i{S_i},$$ 
+We treat the sky value as a constant, such that $\sigma_{S_i}^2 = 0$. Substituting $\sigma_{n_i}^2 = n_i$ as above gives
 
-meaning that the average image in nanomaggies is given by
+$$\sigma_I^2 = \frac{1}{N^2}\sum_i\frac{C_i^2}{g_i^2}n_i + \frac{1}{N^2}\sum_i C_i^2 v_i.$$
 
-$$\bar{I} = \frac{1}{N} \sum_i I_i = \frac{\left<C\right>}{N\left<g\right>}\sum_i{n_i} - \frac{\left<C\right>}{N}\sum_i{S_i},$$
+$$\sigma_I = \frac{1}{N}\sqrt{\sum_i C_i^2\left(\frac{n_i}{g_i^2} + v_i\right)}.$$
 
-$$\bar{I} = \frac{1}{N} \sum_i I_i = \frac{\left<C\right>}{N}\left(\frac{n_\mathrm{total}}{\left<g\right>} - \sum_i{S_i}\right).$$
+Note that this is identical to saying
 
-The corresponding error is therefore given by
+$$\sigma_I^2 = \frac{1}{N^2}\sum_i\sigma_{I_i}^2.$$
 
-$$\sigma_{I}^2 = \sum_i\left(\frac{\mathrm{d}\bar{I}}{\mathrm{d}n_i}\right)^2\sigma_{n_i}^2 + \sum_i\left(\frac{\mathrm{d}\bar{I}}{\mathrm{d}S_i}\right)^2\sigma_{S_i}^2,$$
+## Weighted stacking
 
-$$\sigma_{I}^2 = \sum_i\left(\frac{1}{N}\frac{\left<C\right>}{\left<g\right>}\right)^2\sigma_{n_i}^2 + \sum_i\frac{\left<C\right>^2}{N^2}\sigma_{S_i}^2.$$
+A (potentially) better way of stacking images would be to use a weighted average for pixel values, in which case
 
-Substituting $\sigma_{n_i}^2 = n_i$ as above, and $\sigma_{S_i}^2 = v_i$ for the dark-variance of an image
+$$I = \frac{\sum_i \sigma_{I_i}^{-2}I_i}{\sum_i \sigma_{I_i}^{-2}}$$
 
-$$\sigma_{I}^2 = \frac{\left<C\right>^2}{N^2}\left(\frac{1}{\left<g\right>^2}\sum_i{n_i} - \sum_i{v_i}\right),$$
+The standard error of the weighted mean is thus
 
-$$\sigma_{I} = \sqrt{\frac{n_\mathrm{total}}{\left<g\right>^2} + \sum_i{v_i}}\;\frac{\left<C\right>}{N}.$$
+$$\sigma_{I} = \sqrt{\frac{1}{\sum_i \sigma_{I_i}^{-2}}}$$
 
+$$\sigma_{I} = \left[\sum_i C_i^2\left(\frac{n_i}{g_i^2} + v_i\right)\right]^{-\frac{1}{2}}$$
 
+*(this has not been implemented)*
 
 ## In Practise
 
 - Our frames are not aligned.
-- Calculate $n_i$, the electron counts for each frame
-- For each frame, create a slightly larger than required cutout of nelec and the Calibration image
+- Calculate $n_i$, the electron counts for each frame.
+- For each frame, create a slightly larger than required cutout of electron counts ($n_i$) and calibration images ($C_i$).
 - Use `reproject` to align the electron counts and the calibration images of each frame to the WCS of the FITS header of the `Montage`-created image (which is what volunteer models were drawn on).
-- Proceed with the above calculation
-	- Note that $N$ will not be the same for each pixel, as some regions of the image may be covered by different numbers of frames
-- Once we have $\bar{I}$ and $\sigma_I$, perform a cutout of the required size for each and return!
-
-_**n.b.**_: *MAKE LOTS OF SAVE POINTS* (i.e. write out the cutout + reprojected FITS files)
+- Create the exact cutout we want of the reprojected electron counts, calibration image and sky image.
+- Proceed with the above calculation.
+	- Note that $N$ will not be the same for each pixel, as some regions of the image may be covered by different numbers of frames.
+- We now have $\bar{I}$ and $\sigma_I$ 😁.

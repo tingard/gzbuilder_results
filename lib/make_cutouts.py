@@ -1,21 +1,39 @@
+# - Our frames are not aligned.
+# - Calculate $n_i$, the electron counts for each frame
+# - For each frame, create a slightly larger than required cutout of nelec
+#   and the Calibration image
+# - Use `reproject` to align the electron counts and the calibration images of
+#   each frame to the WCS of the FITS header of the `Montage`-created image
+#   (which is what volunteer models were drawn on).
+# - Proceed with the error calculation
+#   - Note that $N$ will not be the same for each pixel, as some regions of the
+#     image may be covered by different numbers of frames
+# - Once we have $\bar{I}$ and $\sigma_I$, perform a cutout of the required size
+#   for each and return!
+#
+# n.b. MAKE LOTS OF SAVE POINTS (i.e. write out the cutout + reprojected FITS
+# files)
+
+
 import os
 import re
 import numpy as np
 from scipy.interpolate import interp2d
 import pandas as pd
 from astropy.io import fits
-from astropy.wcs import WCS
+from astropy.wcs import WCS, FITSFixedWarning
+from astropy.nddata.utils import NoOverlapError
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata.utils import Cutout2D
 from collections import namedtuple
+from tqdm import tqdm
 import reproject
 
 try:
     import galaxy_utilities as gu
 except ModuleNotFoundError:
     import lib.galaxy_utilities as gu
-
 
 gain_table = pd.DataFrame(
     [
@@ -42,7 +60,10 @@ GetCutoutsOutput = namedtuple(
 
 # filter directory for bad files (ie .DS_Store)
 loc = os.path.abspath(os.path.dirname(__file__))
-montage_output_path = os.path.join(loc, '../../gzbuilder_data_prep/montageGroups/')
+montage_output_path = os.path.join(
+    loc,
+    '../../gzbuilder_data_prep/montageGroups/'
+)
 montage_groups = [
     i for i in os.listdir(montage_output_path)
     if re.match(r'([0-9.]+)\+([\-0-9.]+)', i) is not None
@@ -61,7 +82,7 @@ montage_coords = SkyCoord(
 )
 
 
-def get_montage_frames(gal):
+def get_input_frames(gal):
     gal_coord = SkyCoord(gal['RA'], gal['DEC'], unit=u.degree)
     idx = np.argmin(montage_coords.separation(gal_coord))
     fpath = os.path.join(montage_output_path, montage_groups[idx])
@@ -72,23 +93,18 @@ def get_montage_frames(gal):
     ]
 
 
-def get_sigma_image(f):
-    img = f[0]
-    ff = f[1]
-    sky = f[2]
-    allsky, xinterp, yinterp = sky.data[0]
-    sky_img = interp2d(
-        np.arange(allsky.shape[1]),
-        np.arange(allsky.shape[0]),
-        allsky,
-    )(xinterp, yinterp)
-    calib_img = np.tile(np.expand_dims(ff.data, 1), img.data.shape[0]).T
-    dn = img.data / calib_img + sky_img
-    gain = gain_table.loc[img.header['camcol']][img.header['FILTER']]
-    darkvar = darkvar_r.loc[img.header['camcol']]
-    dn_err = np.sqrt(dn / gain + darkvar)
-    img_err = dn_err * calib_img
-    return img_err
+def get_output_frame(input_frames):
+    if len(input_frames) == 1:
+        return input_frames[0]
+    return os.path.join(
+        '/', *input_frames[0].split('/')[:-1], 'mosaic.fits'
+    ).replace('montageGroups', 'montageOutputs')
+
+
+def get_frames(gal):
+    input_frames = get_input_frames(gal)
+    output_frame = get_output_frame(input_frames)
+    return input_frames, output_frame
 
 
 def get_cutout_params(gal, ra, dec):
@@ -101,153 +117,169 @@ def get_cutout_params(gal, ra, dec):
     return centre_pos, dx, dy
 
 
-def get_reprojected_data(frame_loc, output_mosiac, gal, ra, dec):
-    # open the file
-    frame = fits.open(frame_loc)
-    # extract the HDU
-    hdu = frame[0]
-    # calculate a WCS object
-    wcs = WCS(hdu.header)
-    # Define cutout positions
-    centre_pos, dx, dy = get_cutout_params(gal, ra, dec)
-    # # Grab the cutout
-    # cutout_im = Cutout2D(
-    #     hdu.data,
-    #     centre_pos,
-    #     (dx, dy),
-    #     wcs=wcs,
-    #     mode='partial',
-    #     copy=True,
-    # )
-    # # Update the HDU with the new data and WCS
-    # hdu.data = cutout_im.data
-    # hdu.header.update(cutout_im.wcs.to_header())
-    # Reproject the HDU to the montaged coordinate space
-    array, _ = reproject.reproject_interp(
-        hdu,
-        output_mosiac[0].header
-    )
-    im = Cutout2D(
-        array,
-        centre_pos,
-        (dx, dy),
-        wcs=WCS(output_mosiac[0].header),
-        mode='partial',
-        copy=True,
-    )
-    # reload the frame
-    frame = fits.open(frame_loc)
-    sigma = get_sigma_image(frame)
-    # cutout_sigma = Cutout2D(
-    #     sigma,
-    #     centre_pos,
-    #     (dx, dy),
-    #     wcs=wcs,
-    #     mode='partial',
-    #     copy=True,
-    # )
-    hdu.data = sigma  # cutout_sigma.data
-    # hdu.header.update(cutout_sigma.wcs.to_header())
-    # Reproject the HDU to the montaged coordinate space
-    sigma_array, _ = reproject.reproject_interp(
-        hdu,
-        output_mosiac[0].header
-    )
-    sigma_cutout = Cutout2D(
-        sigma_array,
-        centre_pos,
-        (dx, dy),
-        wcs=WCS(output_mosiac[0].header),
-        mode='partial',
-        copy=True,
-    )
-    return im.data, sigma_cutout.data
+def get_data(f):
+    img = f[0]
+    ff = f[1]
+    sky = f[2]
+    allsky, xinterp, yinterp = sky.data[0]
+    sky_img = interp2d(
+        np.arange(allsky.shape[1]),
+        np.arange(allsky.shape[0]),
+        allsky,
+    )(xinterp, yinterp)
+    calib_img = np.tile(np.expand_dims(ff.data, 1), img.data.shape[0]).T
+    dn = img.data / calib_img + sky_img
+    gain = gain_table.loc[img.header['camcol']][img.header['FILTER']]
+    # darkvar = darkvar_r.loc[img.header['camcol']]
+    nelec = dn * gain
+    return {'nelec': nelec, 'calib': calib_img, 'sky': sky_img}
 
 
-def get_cutouts(subject_id, verbose=False):
-    gal = gu.get_galaxy_and_angle(subject_id)[0]
-    input_frames_path = get_montage_frames(gal)
-    output_mosiac_path = os.path.join(
-        '/', *get_montage_frames(gal)[0].split('/')[:-1], 'mosaic.fits'
-    ).replace('montageGroups', 'montageOutputs')
-    try:
-        output_mosiac = fits.open(output_mosiac_path)
-    except FileNotFoundError:
-        assert len(input_frames_path) == 1
-        output_mosiac = fits.open(input_frames_path[0])
+def get_image_and_error(subject_id, verbose=False):
+    gal, _ = gu.get_galaxy_and_angle(subject_id)
+    input_frames_path, output_mosiac_path = get_frames(gal)
+    output_mosaic = fits.open(output_mosiac_path)
 
+    # use the positions from the subject metadata as it matches the ones shown
+    # to volunteers
     ra, dec = gu.metadata.loc[subject_id][['ra', 'dec']]
 
-    output = pd.Series([])
-    # p = Pool(2)
-    # p.starmap()
-    for i, frame in enumerate(input_frames_path):
-        if verbose:
-            print('Working on', frame.split('/')[-1])
-        try:
-            im, sigma = get_reprojected_data(
-                frame,
-                output_mosiac,
-                gal,
-                ra,
-                dec
-            )
-            output.loc[i] = {'image': im, 'sigma_image': sigma}
-        except ValueError as e:
-            if verbose:
-                print(e)
-                print('Frame:', frame)
+    centre_pos, dx, dy = get_cutout_params(gal, ra, dec)
+    cutout_size = (dx, dy)
+    large_cutout_size = (dx * 1.25, dy * 1.25)
 
-    output = output.apply(pd.Series)
-
-    im_stack = np.stack(output['image'].apply(lambda a: a.data).values)
-    im_mean = np.nanmean(im_stack, axis=0)
-    pixel_counts = np.isfinite(im_stack).astype(int).sum(axis=0).astype(float)
-    # pixel_counts[pixel_counts == 0] == np.nan
-
-    sigma_summed = np.sqrt(
-        np.nansum(
-            np.stack(
-                output['sigma_image'].apply(lambda a: a.data).values
-            )**2,
-            axis=0,
-        )
+    target_cutout = Cutout2D(
+        output_mosaic[0].data,
+        centre_pos,
+        large_cutout_size,
+        wcs=WCS(output_mosaic[0].header),
+        mode='partial',
+        copy=True,
     )
-    sigma_mean = sigma_summed / pixel_counts
-    return GetCutoutsOutput(output, im_mean, sigma_mean, pixel_counts)
+
+    # do the first cutout and reproject
+    reprojection_results = pd.DataFrame(
+        [],
+        columns=('nelec', 'calib', 'sky', 'wcs', 'gain', 'darkvar')
+    )
+    with tqdm(input_frames_path, leave=False) as bar:
+        for i, frame in enumerate(bar):
+            f = fits.open(frame)
+            frame_wcs = WCS(f[0])
+            gain = gain_table.loc[f[0].header['camcol']][f[0].header['FILTER']]
+            darkvar = darkvar_r.loc[f[0].header['camcol']]
+            data = get_data(f)
+
+            # make large cutouts of the needed images
+            def make_large_cutout(arr):
+                return Cutout2D(
+                    arr,
+                    centre_pos,
+                    large_cutout_size,
+                    wcs=frame_wcs,
+                    mode='partial',
+                    copy=True,
+                )
+
+            try:
+                large_nelec_cutout = make_large_cutout(data['nelec'])
+                large_calib_cutout = make_large_cutout(data['calib'])
+                large_sky_cutout = make_large_cutout(data['sky'])
+            except NoOverlapError as e:
+                if verbose:
+                    print(e)
+                    print(frame)
+                continue
+            # reproject the cutouts to the target wcs
+            reproj_nelec, coverage_nelec = reproject.reproject_exact(
+                (large_nelec_cutout.data, large_nelec_cutout.wcs),
+                target_cutout.wcs,
+                shape_out=target_cutout.data.shape
+            )
+            reproj_calib, coverage_calib = reproject.reproject_exact(
+                (large_calib_cutout.data, large_calib_cutout.wcs),
+                target_cutout.wcs,
+                shape_out=target_cutout.data.shape
+            )
+            reproj_sky, coverage_sky = reproject.reproject_exact(
+                (large_sky_cutout.data, large_sky_cutout.wcs),
+                target_cutout.wcs,
+                shape_out=target_cutout.data.shape
+            )
+
+            def make_cutout(arr):
+                return Cutout2D(
+                    arr,
+                    centre_pos,
+                    cutout_size,
+                    wcs=target_cutout.wcs,
+                    mode='partial',
+                    copy=True,
+                )
+            nelec_cutout = make_cutout(reproj_nelec)
+            calib_cutout = make_cutout(reproj_calib)
+            sky_cutout = make_cutout(reproj_sky)
+
+            coverage_mask = np.isfinite(nelec_cutout.data)
+            coverage_mask[~coverage_mask] = np.nan
+            if np.any(coverage_mask):
+                reprojection_results.loc[i] = {
+                    'nelec': nelec_cutout.data,
+                    'calib': calib_cutout.data,
+                    'sky': sky_cutout.data,
+                    'wcs': nelec_cutout.wcs,
+                    'gain': coverage_mask.astype(int) * gain,
+                    'darkvar': coverage_mask.astype(int) * darkvar
+                }
+
+    # we now have a DataFrame of electron counts and calibration images
+    elec_stack = np.stack(reprojection_results['nelec'].values)
+    calib_stack = np.stack(reprojection_results['calib'].values)
+    sky_stack = np.stack(reprojection_results['sky'].values)
+    g_stack = np.stack(reprojection_results['gain'].values)
+    v_stack = np.stack(reprojection_results['darkvar'].values)
+    pixel_count = np.isfinite(elec_stack).astype(int).sum(axis=0).astype(float)
+    # I = C(n / g - S)
+    I_combined = np.nansum(
+        calib_stack * (elec_stack / g_stack - sky_stack),
+        axis=0
+    ) / pixel_count
+    sigma_I = np.sqrt(
+        np.nansum(calib_stack**2 * ((elec_stack / g_stack**2) + v_stack), axis=0)
+    ) / pixel_count
+    return I_combined, sigma_I
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import warnings
-    from astropy.wcs import FITSFixedWarning
-
     warnings.simplefilter('ignore', FITSFixedWarning)
+    warnings.simplefilter('ignore', FutureWarning)
 
-    subject_id = 21097001
+    subject_id = 20902040
+    I, sigma_I = get_image_and_error(subject_id)
 
-    im_zoo = gu.get_image(subject_id)
     diff_data = gu.get_diff_data(subject_id)
-    mask = (1 - np.array(diff_data['mask'])).astype(bool)
-    data_zoo = np.array(diff_data['imageData']) * diff_data['multiplier']
-    output = get_cutouts(subject_id, verbose=True)
+    pixel_mask = 1 - np.array(diff_data['mask'])
+    pixel_mask[pixel_mask == 0] = np.nan
 
-    lims = np.min(data_zoo), np.max(data_zoo)
+    original_image = np.array(diff_data['imageData']) * pixel_mask
 
-    print('Making plots')
-    f, ax = plt.subplots(ncols=2, nrows=3, figsize=(9, 12), dpi=100)
-    ax[0][0].set_title('Zooniverse Image')
-    ax[0][0].imshow(im_zoo, cmap='gray')
-    ax[0][1].set_title('Montaged Image (Old method)')
-    ax[0][1].imshow(data_zoo, vmin=lims[0], vmax=lims[1])
-    ax[1][0].set_title('Montaged Image (New method)')
-    ax[1][0].imshow(output.image * mask, vmin=lims[0], vmax=lims[1])
-    ax[1][1].set_title('Sigma Image')
-    ax[1][1].imshow(output.sigma_image * mask)
-    ax[2][0].set_title('Pixel mask')
-    ax[2][0].imshow(mask)
-    ax[2][1].set_title('Pixel counts')
-    ax[2][1].imshow(output.pixel_counts, vmin=0, vmax=8, cmap='Set1')
+    I_scaled = I / diff_data['multiplier'] * pixel_mask
 
-    plt.tight_layout()
-    plt.savefig('custom_montage_results.png', bbox_inches='tight')
+    diff = I_scaled - original_image
+
+    print('Old:', np.nanmin(original_image), np.nanmax(original_image))
+    print('New:', np.nanmin(I_scaled), np.nanmax(I_scaled))
+
+    lims = dict(
+        vmin=-max(np.nanmax(np.abs(I_scaled)), np.nanmax(np.abs(original_image))),
+        vmax=max(np.nanmax(np.abs(I_scaled)), np.nanmax(np.abs(original_image))),
+        cmap='coolwarm'
+    )
+    plt.imshow(I_scaled)
+    plt.colorbar()
+    plt.figure()
+    plt.imshow(sigma_I / diff_data['multiplier'] * pixel_mask)
+    plt.colorbar()
+    plt.show()
