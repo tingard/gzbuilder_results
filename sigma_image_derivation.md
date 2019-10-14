@@ -52,7 +52,7 @@ The standard error of the weighted mean is thus
 
 $$\sigma_{I} = \sqrt{\frac{1}{\sum_i \sigma_{I_i}^{-2}}}$$
 
-$$\sigma_{I} = \left[\sum_i C_i^2\left(\frac{n_i}{g_i^2} + v_i\right)\right]^{-\frac{1}{2}}$$
+$$\sigma_{I} = \left[\sum_i \left(\frac{1}{C_i^2\left(\frac{n_i}{g_i^2} + v_i\right)}\right)\right]^{\ -\frac{1}{2}}$$
 
 *(this has not been implemented)*
 

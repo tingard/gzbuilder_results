@@ -130,12 +130,22 @@ def get_data(f):
     calib_img = np.tile(np.expand_dims(ff.data, 1), img.data.shape[0]).T
     dn = img.data / calib_img + sky_img
     gain = gain_table.loc[img.header['camcol']][img.header['FILTER']]
-    # darkvar = darkvar_r.loc[img.header['camcol']]
+    darkvar = darkvar_r.loc[img.header['camcol']]
     nelec = dn * gain
-    return {'nelec': nelec, 'calib': calib_img, 'sky': sky_img}
+    return {'nelec': nelec, 'calib': calib_img, 'sky': sky_img,
+            'gain': gain, 'darkvar': darkvar}
 
 
-def get_image_and_error(subject_id, verbose=False):
+def get_reprojection_results(subject_id, verbose=False):
+    """Create a DataFrame of data required for image and error calculation,
+    for each available frame covering a galaxy, reprojected to the correct
+    WCS and cutout to the correct shape.
+    Output for each available frame covering the galaxy:
+    (
+        'image', 'nelec', 'calib', 'sky', 'wcs', 'gain', 'darkvar',
+        'large_image_cutout', 'reproj_img', 'unit_noise'
+    )
+    """
     gal, _ = gu.get_galaxy_and_angle(subject_id)
     input_frames_path, output_mosiac_path = get_frames(gal)
     output_mosaic = fits.open(output_mosiac_path)
@@ -160,15 +170,18 @@ def get_image_and_error(subject_id, verbose=False):
     # do the first cutout and reproject
     reprojection_results = pd.DataFrame(
         [],
-        columns=('nelec', 'calib', 'sky', 'wcs', 'gain', 'darkvar')
+        columns=('image', 'nelec', 'calib', 'sky', 'wcs', 'gain',
+                 'darkvar', 'large_image_cutout', 'reproj_img',
+                 'unit_noise')
     )
     with tqdm(input_frames_path, leave=False) as bar:
         for i, frame in enumerate(bar):
             f = fits.open(frame)
             frame_wcs = WCS(f[0])
-            gain = gain_table.loc[f[0].header['camcol']][f[0].header['FILTER']]
-            darkvar = darkvar_r.loc[f[0].header['camcol']]
             data = get_data(f)
+            gain = data['gain']
+            darkvar = data['darkvar']
+            unit_noise = np.random.randn(*data['nelec'].shape)
 
             # make large cutouts of the needed images
             def make_large_cutout(arr):
@@ -185,12 +198,25 @@ def get_image_and_error(subject_id, verbose=False):
                 large_nelec_cutout = make_large_cutout(data['nelec'])
                 large_calib_cutout = make_large_cutout(data['calib'])
                 large_sky_cutout = make_large_cutout(data['sky'])
+                large_noise_cutout = make_large_cutout(unit_noise)
             except NoOverlapError as e:
                 if verbose:
                     print(e)
                     print(frame)
                 continue
+
+            large_img_cutout = (
+                large_calib_cutout.data
+                * (large_nelec_cutout.data / gain - large_sky_cutout.data)
+            )
+
             # reproject the cutouts to the target wcs
+            reproj_img, coverage_img = reproject.reproject_exact(
+                (large_img_cutout, large_nelec_cutout.wcs),
+                target_cutout.wcs,
+                shape_out=target_cutout.data.shape
+            )
+
             reproj_nelec, coverage_nelec = reproject.reproject_exact(
                 (large_nelec_cutout.data, large_nelec_cutout.wcs),
                 target_cutout.wcs,
@@ -206,6 +232,11 @@ def get_image_and_error(subject_id, verbose=False):
                 target_cutout.wcs,
                 shape_out=target_cutout.data.shape
             )
+            reproj_noise, coverage_noise = reproject.reproject_exact(
+                (large_noise_cutout.data, large_noise_cutout.wcs),
+                target_cutout.wcs,
+                shape_out=target_cutout.data.shape
+            )
 
             def make_cutout(arr):
                 return Cutout2D(
@@ -216,23 +247,32 @@ def get_image_and_error(subject_id, verbose=False):
                     mode='partial',
                     copy=True,
                 )
+            img_cutout = make_cutout(reproj_img)
             nelec_cutout = make_cutout(reproj_nelec)
             calib_cutout = make_cutout(reproj_calib)
             sky_cutout = make_cutout(reproj_sky)
+            noise_cutout = make_cutout(reproj_noise)
 
             coverage_mask = np.isfinite(nelec_cutout.data)
-            coverage_mask[~coverage_mask] = np.nan
             if np.any(coverage_mask):
+                coverage_mask[~coverage_mask] = np.nan
                 reprojection_results.loc[i] = {
+                    'image': img_cutout.data,
+                    'large_image_cutout': large_img_cutout,
+                    'reproj_img': reproj_img,
                     'nelec': nelec_cutout.data,
                     'calib': calib_cutout.data,
                     'sky': sky_cutout.data,
                     'wcs': nelec_cutout.wcs,
                     'gain': coverage_mask.astype(int) * gain,
-                    'darkvar': coverage_mask.astype(int) * darkvar
+                    'darkvar': coverage_mask.astype(int) * darkvar,
+                    'unit_noise': noise_cutout.data[coverage_mask].std(),
                 }
+    return reprojection_results
 
-    # we now have a DataFrame of electron counts and calibration images
+
+def get_image_and_error(subject_id, **kwargs):
+    reprojection_results = get_reprojection_results(subject_id, **kwargs)
     elec_stack = np.stack(reprojection_results['nelec'].values)
     calib_stack = np.stack(reprojection_results['calib'].values)
     sky_stack = np.stack(reprojection_results['sky'].values)
@@ -241,11 +281,14 @@ def get_image_and_error(subject_id, verbose=False):
     pixel_count = np.isfinite(elec_stack).astype(int).sum(axis=0).astype(float)
     # I = C(n / g - S)
     I_combined = np.nansum(
-        calib_stack * (elec_stack / g_stack - sky_stack),
+        calib_stack * ((elec_stack / g_stack) - sky_stack),
         axis=0
     ) / pixel_count
     sigma_I = np.sqrt(
-        np.nansum(calib_stack**2 * ((elec_stack / g_stack**2) + v_stack), axis=0)
+        np.nansum(
+            calib_stack**2 * ((elec_stack / g_stack**2) + v_stack),
+            axis=0
+        )
     ) / pixel_count
     return I_combined, sigma_I
 
