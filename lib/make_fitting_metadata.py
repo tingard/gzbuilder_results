@@ -7,7 +7,7 @@ except ImportError:
 import galaxy_utilities as gu
 from tqdm import tqdm
 import make_cutouts as mkct
-from astropy.wcs import FITSFixedWarning
+from astropy.wcs import WCS, FITSFixedWarning
 import warnings
 
 warnings.simplefilter('ignore', FITSFixedWarning)
@@ -21,42 +21,33 @@ sid_list = np.loadtxt(os.path.join(loc, 'subject-id-list.csv'), dtype='u8')
 def get_data(subject_id):
     diff_data = gu.get_diff_data(subject_id)
 
-    original_image = np.array(diff_data['imageData'])
-    pixel_mask = 1 - np.array(diff_data['mask'])
-
     # generate a cutout and sigma image
-    I, sigma_I = mkct.get_image_and_error(subject_id)
-
-    # scale the image and std to match that used in modelling
-    im_scaled = I / diff_data['multiplier']
-    sd_scaled = sigma_I / diff_data['multiplier']
-
-    # make sure arrays are all of the correct size
-    assert np.all(np.equal(im_scaled.shape, sd_scaled.shape))
-
-    # mask out regions in the cutout outside the frame
+    frame_data = mkct.get_frame_data(subject_id)
+    frame_data.to_pickle('frame_data/{}.pickle'.format(subject_id))
     try:
-        pixel_mask[np.isnan(im_scaled)] = 0
-        pixel_mask[np.isnan(sd_scaled)] = 0
-        # # could just leave as NaNs?
-        # im_scaled[np.isnan(im_scaled)] = 0
-        # sd_scaled[np.isnan(im_scaled)] = np.inf
-    except ValueError as e:
-        print(im_scaled.shape, pixel_mask.shape)
-        raise e
+        stacked_image, sigma_image = mkct.generate_new_cutout(
+            subject_id, frame_data=frame_data
+        )
 
-    pixel_mask = pixel_mask.astype(int)
-    np.nanprod((im_scaled, pixel_mask), axis=0)
-    if np.any(np.isnan(np.nanprod((im_scaled, pixel_mask), axis=0))):
-        raise ValueError('NaNs still present in image outside mask')
-    if np.any(np.isnan(np.nanprod((sd_scaled, pixel_mask), axis=0))):
-        raise ValueError('NaNs still present in sigma image outside mask')
+    except ValueError as e:
+        print('Error on:', subject_id, e)
+        print('Frame cutouts were not the same shape')
+        return None
+    # scale the image and std to match that used in modelling
+    im_scaled = stacked_image / diff_data['multiplier']
+    sd_scaled = sigma_image / diff_data['multiplier']
+
+    # get the WCS objects so we can transform models back into the original
+    # projection
+    montage_wcs = mkct.get_montaged_cutout(subject_id).wcs
+    original_wcs = frame_data.iloc[0].wcs
 
     return dict(
         psf=gu.get_psf(subject_id),
-        pixel_mask=pixel_mask * pixel_mask,
+        pixel_mask=~im_scaled.mask,
         galaxy_data=im_scaled,
-        original_data=original_image,
+        montage_wcs=montage_wcs,
+        original_wcs=original_wcs,
         sigma_image=sd_scaled,
         width=diff_data['width'],
         size_diff=diff_data['width'] / diff_data['imageWidth'],
@@ -72,4 +63,4 @@ df = df.progress_apply(get_data)
 #         df[subject_id] = get_data(subject_id)
 
 df = df.apply(pd.Series)
-df.to_pickle(os.path.join(loc, 'fitting_metadata.pkl'))
+df.to_pickle(os.path.join(loc, 'fitting_metadata2.pkl'))

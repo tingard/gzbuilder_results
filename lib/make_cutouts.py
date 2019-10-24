@@ -21,15 +21,13 @@ import numpy as np
 from scipy.interpolate import interp2d
 import pandas as pd
 from astropy.io import fits
-from astropy.wcs import WCS, FITSFixedWarning
+from astropy.wcs import WCS
 from astropy.nddata.utils import NoOverlapError
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata.utils import Cutout2D
-from collections import namedtuple
 from tqdm import tqdm
-import reproject
-
+import sep
 try:
     import galaxy_utilities as gu
 except ModuleNotFoundError:
@@ -51,11 +49,6 @@ darkvar_r = pd.Series(
     [1.8225, 1.00, 1.3225, 1.3225, 0.81, 0.9025],
     index=np.arange(6) + 1,
     name='darkvar_r'
-)
-
-GetCutoutsOutput = namedtuple(
-    'mosiac_result',
-    ['individual_cutouts', 'image', 'sigma_image', 'pixel_counts']
 )
 
 # filter directory for bad files (ie .DS_Store)
@@ -96,12 +89,18 @@ def get_input_frames(gal):
 def get_output_frame(input_frames):
     if len(input_frames) == 1:
         return input_frames[0]
+    os.path.join(os.path.dirname(input_frames[0]), 'mosaic.fits')
     return os.path.join(
-        '/', *input_frames[0].split('/')[:-1], 'mosaic.fits'
+        os.path.dirname(input_frames[0]),
+        'mosaic.fits'
     ).replace('montageGroups', 'montageOutputs')
 
 
-def get_frames(gal):
+def get_frames(gal=None, subject_id=None):
+    if gal is None and subject_id is None:
+        raise TypeError('Mising required argument of gal object or subject_id')
+    if subject_id is not None:
+        gal = gu.get_galaxy(subject_id)
     input_frames = get_input_frames(gal)
     output_frame = get_output_frame(input_frames)
     return input_frames, output_frame
@@ -115,6 +114,22 @@ def get_cutout_params(gal, ra, dec):
     dx = 4 * float(gal['PETRO_THETA']) * u.arcsec
     dy = 4 * float(gal['PETRO_THETA']) * u.arcsec
     return centre_pos, dx, dy
+
+
+def get_montaged_cutout(subject_id):
+    gal = gu.get_galaxy(subject_id)
+    ra, dec = gu.metadata.loc[subject_id][['ra', 'dec']]
+    centre_pos, dx, dy = get_cutout_params(gal, ra, dec)
+    montage_fits = fits.open(get_frames(subject_id=subject_id)[1])
+    montage_cutout = Cutout2D(
+        montage_fits[0].data,
+        centre_pos,
+        (dx, dy),
+        wcs=WCS(montage_fits[0]),
+        mode='partial',
+        copy=True,
+    )
+    return montage_cutout
 
 
 def get_data(f):
@@ -136,44 +151,23 @@ def get_data(f):
             'gain': gain, 'darkvar': darkvar}
 
 
-def get_reprojection_results(subject_id, verbose=False):
-    """Create a DataFrame of data required for image and error calculation,
-    for each available frame covering a galaxy, reprojected to the correct
-    WCS and cutout to the correct shape.
-    Output for each available frame covering the galaxy:
-    (
-        'image', 'nelec', 'calib', 'sky', 'wcs', 'gain', 'darkvar',
-        'large_image_cutout', 'reproj_img', 'unit_noise'
-    )
-    """
+def get_frame_data(subject_id, verbose=False, ensure_consistent_sizes=True):
     gal, _ = gu.get_galaxy_and_angle(subject_id)
-    input_frames_path, output_mosiac_path = get_frames(gal)
-    output_mosaic = fits.open(output_mosiac_path)
+    input_frames_path, _ = get_frames(gal)
 
     # use the positions from the subject metadata as it matches the ones shown
     # to volunteers
-    ra, dec = gu.metadata.loc[subject_id][['ra', 'dec']]
-
-    centre_pos, dx, dy = get_cutout_params(gal, ra, dec)
+    centre = gu.metadata.loc[subject_id][['ra', 'dec']].astype(float)
+    centre_pos, dx, dy = get_cutout_params(gal, *centre)
     cutout_size = (dx, dy)
-    large_cutout_size = (dx * 1.25, dy * 1.25)
-
-    target_cutout = Cutout2D(
-        output_mosaic[0].data,
-        centre_pos,
-        large_cutout_size,
-        wcs=WCS(output_mosaic[0].header),
-        mode='partial',
-        copy=True,
-    )
 
     # do the first cutout and reproject
-    reprojection_results = pd.DataFrame(
+    frames = pd.DataFrame(
         [],
-        columns=('image', 'nelec', 'calib', 'sky', 'wcs', 'gain',
-                 'darkvar', 'large_image_cutout', 'reproj_img',
-                 'unit_noise')
+        columns=('frame', 'image', 'nelec', 'calib', 'sigma', 'sky', 'wcs',
+                 'gain', 'darkvar')
     )
+
     with tqdm(input_frames_path, leave=False) as bar:
         for i, frame in enumerate(bar):
             f = fits.open(frame)
@@ -181,109 +175,73 @@ def get_reprojection_results(subject_id, verbose=False):
             data = get_data(f)
             gain = data['gain']
             darkvar = data['darkvar']
-            unit_noise = np.random.randn(*data['nelec'].shape)
 
-            # make large cutouts of the needed images
-            def make_large_cutout(arr):
+            def make_cutout(data):
                 return Cutout2D(
-                    arr,
+                    data,
                     centre_pos,
-                    large_cutout_size,
+                    cutout_size,
                     wcs=frame_wcs,
                     mode='partial',
                     copy=True,
                 )
-
             try:
-                large_nelec_cutout = make_large_cutout(data['nelec'])
-                large_calib_cutout = make_large_cutout(data['calib'])
-                large_sky_cutout = make_large_cutout(data['sky'])
-                large_noise_cutout = make_large_cutout(unit_noise)
+                img_cutout = make_cutout(f[0].data)
+                nelec_cutout = make_cutout(data['nelec'])
+                calib_cutout = make_cutout(data['calib'])
+                sky_cutout = make_cutout(data['sky'])
             except NoOverlapError as e:
                 if verbose:
                     print(e)
                     print(frame)
                 continue
 
-            large_img_cutout = (
-                large_calib_cutout.data
-                * (large_nelec_cutout.data / gain - large_sky_cutout.data)
-            )
-
-            # reproject the cutouts to the target wcs
-            reproj_img, coverage_img = reproject.reproject_exact(
-                (large_img_cutout, large_nelec_cutout.wcs),
-                target_cutout.wcs,
-                shape_out=target_cutout.data.shape
-            )
-
-            reproj_nelec, coverage_nelec = reproject.reproject_exact(
-                (large_nelec_cutout.data, large_nelec_cutout.wcs),
-                target_cutout.wcs,
-                shape_out=target_cutout.data.shape
-            )
-            reproj_calib, coverage_calib = reproject.reproject_exact(
-                (large_calib_cutout.data, large_calib_cutout.wcs),
-                target_cutout.wcs,
-                shape_out=target_cutout.data.shape
-            )
-            reproj_sky, coverage_sky = reproject.reproject_exact(
-                (large_sky_cutout.data, large_sky_cutout.wcs),
-                target_cutout.wcs,
-                shape_out=target_cutout.data.shape
-            )
-            reproj_noise, coverage_noise = reproject.reproject_exact(
-                (large_noise_cutout.data, large_noise_cutout.wcs),
-                target_cutout.wcs,
-                shape_out=target_cutout.data.shape
-            )
-
-            def make_cutout(arr):
-                return Cutout2D(
-                    arr,
-                    centre_pos,
-                    cutout_size,
-                    wcs=target_cutout.wcs,
-                    mode='partial',
-                    copy=True,
-                )
-            img_cutout = make_cutout(reproj_img)
-            nelec_cutout = make_cutout(reproj_nelec)
-            calib_cutout = make_cutout(reproj_calib)
-            sky_cutout = make_cutout(reproj_sky)
-            noise_cutout = make_cutout(reproj_noise)
-
+            if ensure_consistent_sizes:
+                cutout_size = img_cutout.data.shape
             coverage_mask = np.isfinite(nelec_cutout.data)
             if np.any(coverage_mask):
+                sigma = (
+                    calib_cutout.data
+                    * np.sqrt(nelec_cutout.data / gain**2 + darkvar)
+                )
                 coverage_mask[~coverage_mask] = np.nan
-                reprojection_results.loc[i] = {
+                frames.loc[i] = {
+                    'frame': frame,
                     'image': img_cutout.data,
-                    'large_image_cutout': large_img_cutout,
-                    'reproj_img': reproj_img,
                     'nelec': nelec_cutout.data,
                     'calib': calib_cutout.data,
+                    'sigma': sigma,
                     'sky': sky_cutout.data,
-                    'wcs': nelec_cutout.wcs,
+                    'wcs': img_cutout.wcs,
                     'gain': coverage_mask.astype(int) * gain,
                     'darkvar': coverage_mask.astype(int) * darkvar,
-                    'unit_noise': noise_cutout.data[coverage_mask].std(),
                 }
-    return reprojection_results
+    return frames
 
 
-def get_image_and_error(subject_id, **kwargs):
-    reprojection_results = get_reprojection_results(subject_id, **kwargs)
-    elec_stack = np.stack(reprojection_results['nelec'].values)
-    calib_stack = np.stack(reprojection_results['calib'].values)
-    sky_stack = np.stack(reprojection_results['sky'].values)
-    g_stack = np.stack(reprojection_results['gain'].values)
-    v_stack = np.stack(reprojection_results['darkvar'].values)
+def stack_frames(frames):
+    elec_stack = np.stack(frames['nelec'].values)
+    calib_stack = np.stack(frames['calib'].values)
+    sky_stack = np.stack(frames['sky'].values)
+    g_stack = np.stack(frames['gain'].values)
+    v_stack = np.stack(frames['darkvar'].values)
     pixel_count = np.isfinite(elec_stack).astype(int).sum(axis=0).astype(float)
+
+    # we can just stack the images
+    I_mean = np.nanmean(np.stack(frames['image'].values), axis=0)
+
+    # or calculate from the raw data
     # I = C(n / g - S)
     I_combined = np.nansum(
         calib_stack * ((elec_stack / g_stack) - sky_stack),
         axis=0
     ) / pixel_count
+
+    # if this fails then something is wrong with the data
+    if not np.allclose(I_mean, I_combined):
+        raise ValueError('Inconsistencies in data')
+
+    # sigma = 1/N * sqrt(sum(C**2 (n / g**2) + v))
     sigma_I = np.sqrt(
         np.nansum(
             calib_stack**2 * ((elec_stack / g_stack**2) + v_stack),
@@ -293,36 +251,54 @@ def get_image_and_error(subject_id, **kwargs):
     return I_combined, sigma_I
 
 
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    import warnings
-    warnings.simplefilter('ignore', FITSFixedWarning)
-    warnings.simplefilter('ignore', FutureWarning)
+def sourceExtractImage(data, bkgArr=None, sortType='center', verbose=False,
+                       **kwargs):
+    """Extract sources from data array and return enumerated objects sorted
+    smallest to largest, and the segmentation map provided by source extractor
+    """
+    data = np.array(data).byteswap().newbyteorder()
+    if bkgArr is None:
+        bkgArr = np.zeros(data.shape)
+    o = sep.extract(data, kwargs.pop('threshold', 0.05), segmentation_map=True,
+                    **kwargs)
+    if sortType == 'size':
+        if verbose:
+            print('Sorting extracted objects by radius from size')
+        sizeSortedObjects = sorted(
+            enumerate(o[0]), key=lambda src: src[1]['npix']
+        )
+        return sizeSortedObjects, o[1]
+    elif sortType == 'center':
+        if verbose:
+            print('Sorting extracted objects by radius from center')
+        centerSortedObjects = sorted(
+            enumerate(o[0]),
+            key=lambda src: (
+                (src[1]['x'] - data.shape[0] / 2)**2
+                + (src[1]['y'] - data.shape[1] / 2)**2
+            )
+        )[::-1]
+        return centerSortedObjects, o[1]
 
-    subject_id = 20902040
-    I, sigma_I = get_image_and_error(subject_id)
 
-    diff_data = gu.get_diff_data(subject_id)
-    pixel_mask = 1 - np.array(diff_data['mask'])
-    pixel_mask[pixel_mask == 0] = np.nan
+def maskArr(arrIn, segMap, maskID):
+    """Return a true/false mask given a segmentation map and segmentation ID
+    True signifies the pixel should be masked
+    """
+    return np.logical_and(segMap != maskID, segMap != 0)
 
-    original_image = np.array(diff_data['imageData']) * pixel_mask
 
-    I_scaled = I / diff_data['multiplier'] * pixel_mask
-
-    diff = I_scaled - original_image
-
-    print('Old:', np.nanmin(original_image), np.nanmax(original_image))
-    print('New:', np.nanmin(I_scaled), np.nanmax(I_scaled))
-
-    lims = dict(
-        vmin=-max(np.nanmax(np.abs(I_scaled)), np.nanmax(np.abs(original_image))),
-        vmax=max(np.nanmax(np.abs(I_scaled)), np.nanmax(np.abs(original_image))),
-        cmap='coolwarm'
-    )
-    plt.imshow(I_scaled)
-    plt.colorbar()
-    plt.figure()
-    plt.imshow(sigma_I / diff_data['multiplier'] * pixel_mask)
-    plt.colorbar()
-    plt.show()
+def generate_new_cutout(subject_id, frame_data=None):
+    if frame_data is None:
+        frame_data = get_frame_data(subject_id)
+    stacked_image, sigma_image = stack_frames(frame_data)
+    # prevents astropy.io.fits reads things in a big-endian way, which makes
+    # MacOS sad
+    image_data = stacked_image.byteswap().newbyteorder()
+    # source extract the image for masking
+    objects, segmentation_map = sourceExtractImage(image_data)
+    mask = maskArr(image_data, segmentation_map, objects[-1][0] + 1)
+    mask[np.isnan(image_data)] = True
+    masked_image = np.ma.masked_array(stacked_image, mask)
+    masked_sigma = np.ma.masked_array(sigma_image, mask)
+    return masked_image, masked_sigma

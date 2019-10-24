@@ -8,7 +8,7 @@ __x_in = np.linspace(0, 1, 512)
 __x_out = asinh_stretch(__x_in)
 __x_out /= __x_out.max()
 __newcolors = cm.get_cmap('gray', 1024)(__x_out)
-asinh_colormap = ListedColormap(__newcolors)
+asinh_cmap = ListedColormap(__newcolors)
 
 if __name__ == '__main__':
     import pandas as pd

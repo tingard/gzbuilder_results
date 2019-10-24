@@ -74,9 +74,9 @@ best_indiv = pd.read_pickle(BEST_INDIVIDUAL_LOCATION)
 def make_model(subject_id, m):
     diff_data = fitting_metadata.loc[subject_id]
     psf = diff_data['psf']
-    pixel_mask = np.array(diff_data['pixel_mask'])[::-1]
-    sigma_image = np.array(diff_data['sigma_image'])[::-1]
-    galaxy_data = np.array(diff_data['galaxy_data'])[::-1]
+    pixel_mask = np.array(diff_data['pixel_mask'])
+    sigma_image = np.array(diff_data['sigma_image'])
+    galaxy_data = np.array(diff_data['galaxy_data'])
     return fitting.Model(m, galaxy_data, psf=psf, pixel_mask=pixel_mask, sigma_image=sigma_image)
 
 

@@ -1,16 +1,13 @@
-# This script requires a number of
-#
-#
-#
-#
-
 import os
 import sys
+import re
 import json
 import numpy as np
 import pandas as pd
 import argparse
 from tqdm import tqdm
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 from astropy.wcs import WCS
 from astropy import log
 log.setLevel('ERROR')
@@ -32,33 +29,46 @@ default_subjects_csv_location = os.path.join(
     this_file_location,
     'galaxy-builder-subjects.csv'
 )
+default_montages_location = os.path.join(
+    this_file_location,
+    '../../gzbuilder_data_prep/montageOutputs'
+)
+
+default_subjects_location = os.path.join(
+    this_file_location,
+    '../../gzbuilder_data_prep/fits_images'
+)
+
 parser.add_argument('--subjects', metavar='/path/to/subjects.csv',
                     default=default_subjects_csv_location,
                     type=str, help='Location of Zooniverse Subject export')
 
 parser.add_argument('--montages', metavar='/path/to/montageOutputs',
-                    required=True, type=str,
+                    default=default_montages_location, type=str,
                     help='Location of Montage Output folder from subject creation')
 
 parser.add_argument('--images', metavar='/path/to/images',
-                    required=True, type=str,
+                    default=default_subjects_location, type=str,
                     help='Location of FITS Images downloaded from SkyServer during subject creation')
 
 args = parser.parse_args()
 
-this_file_location = os.path.dirname(os.path.abspath(__file__))
+montage_groups = [
+    i for i in os.listdir(args.montages)
+    if re.match(r'([0-9.]+)\+([\-0-9.]+)', i) is not None
+]
 
-try:
-    montages = [f for f in os.listdir(args.montages) if not f[0] == '.']
-    montageCoordinates = np.array([
-        [float(j) for j in i.replace('+', ' ').split(' ')]
-        if '+' in i
-        else [float(j) for j in i.replace('-', ' -').split(' ')]
-        for i in [f for f in os.listdir(args.montages) if not f[0] == '.']
-    ])
-except FileNotFoundError:
-    print('Could not find montageOutputs, some functions may not work')
-    sys.exit(0)
+# create a list of coordinates to search
+montage_coords = SkyCoord(
+    np.array([
+        i.groups() for i in (
+            re.match(r'([0-9.]+)\+([\-0-9.]+)', i)
+            for i in montage_groups
+        )
+        if i is not None
+    ]).astype(float),
+    unit=u.degree,
+)
 
 subjects = pd.read_csv(
     args.subjects,
@@ -73,88 +83,94 @@ except FileNotFoundError:
     sys.exit(0)
 
 
-def get_angle(gal, fits_name, image_size=np.array([512, 512])):
-    """obtain the galaxy's rotation in Zooniverse image coordinates. This is
-    made slightly trickier by some decisions in the subject
-    creation pipeline.
-    """
-    # First, use a WCS object to obtain the rotation in pixel coordinates, as
-    # would be obtained from `fitsFile[0].data`
-    wFits = WCS(fits_name)
-    # edit to center on the galaxy
-    wFits.wcs.crval = [float(gal['RA']), float(gal['DEC'])]
-    wFits.wcs.crpix = image_size
+def rotation(a):
+    return np.array(((np.cos(a), np.sin(a)), (-np.sin(a), np.cos(a))))
 
-    r = 4 * float(gal['PETRO_THETA']) / 3600
-    phi = float(gal['PETRO_PHI90'])
 
-    center_pix, dec_line = np.array(wFits.all_world2pix(
-        [gal['RA'], gal['RA']],
-        [gal['DEC'], gal['DEC'] + r],
-        0
-    )).T
+def transform_angle(original_frame, montage_frame, angle):
+    wcs = dict(original=WCS(original_frame), montaged=WCS(montage_frame))
+    angles = dict()
+    for k in wcs.keys():
+        centre = wcs[k].wcs.crval.copy()
+        dec_line = centre + (10/3600, 0)
+        # negative as NSA uses (N to E) angles
+        line_of_angle = np.dot(
+            rotation(np.deg2rad(angle)),
+            dec_line - centre
+        ) + centre
+        center_pix, angle_line_pix = wcs[k].all_world2pix(
+            [centre, line_of_angle],
+            0
+        )
+        new_angle = np.arctan2(*np.flip(angle_line_pix - center_pix))
+        angles[k] = -new_angle
+    return angles
 
-    rot = [
-        [np.cos(np.deg2rad(phi)), -np.sin(np.deg2rad(phi))],
-        [np.sin(np.deg2rad(phi)), np.cos(np.deg2rad(phi))]
+
+def get_input_frames(gal):
+    gal_coord = SkyCoord(gal['RA'], gal['DEC'], unit=u.degree)
+    idx = np.argmin(montage_coords.separation(gal_coord))
+    fpath = os.path.join(args.montages, montage_groups[idx])
+    return [
+        os.path.join(fpath, i)
+        for i in os.listdir(fpath)
+        if '.fits' in i
     ]
-    vec = np.dot(rot, dec_line - center_pix)
-    rotation_angle = 90 - np.rad2deg(np.arctan2(vec[1], vec[0])) - 90
-    return rotation_angle
 
 
-def get_fits_location(gal):
-    montagesDistanceMask = np.add.reduce(
-        (montageCoordinates - [gal['RA'], gal['DEC']])**2,
-        axis=1
-    ) < 0.01
-    if np.any(montagesDistanceMask):
-        # __import__('warnings').warn('Using montaged image')
-        montageFolder = montages[
-            np.where(montagesDistanceMask)[0][0]
-        ]
-        fits_name = os.path.join(
-            args.montages,
-            montageFolder,
-            'mosaic.fits',
-        )
-    else:
-        fits_name = os.path.join(
-            args.images,
-            '{0}/{1}/frame-r-{0:06d}-{1}-{2:04d}.fits'
-        ).format(
-            int(gal['RUN']),
-            int(gal['CAMCOL']),
-            int(gal['FIELD'])
-        )
-    return fits_name
+def get_output_frame(input_frames):
+    if len(input_frames) == 1:
+        return input_frames[0]
+    os.path.join(os.path.dirname(input_frames[0]), 'mosaic.fits')
+    return os.path.join(
+        os.path.dirname(input_frames[0]),
+        'mosaic.fits'
+    ).replace('montageGroups', 'montageOutputs')
 
 
-galaxy_info = pd.Series([])
-with tqdm(subjects.index.values, desc='Iterating over subjects') as bar:
-    for subject_id in bar:
-        # Grab the metadata of the subject we are working on
-        subject = subjects.loc[subject_id]
-        # And the NSA data for the galaxy (if it's a galaxy with NSA data,
-        # otherwise throw an error)
-        if metadata.loc[subject_id].get('NSA id', False) is not np.nan:
-            try:
-                gal = df_nsa.drop_duplicates(
-                    subset='NSAID'
-                ).set_index(
-                    'NSAID',
-                    drop=False
-                ).loc[
-                    int(metadata.loc[subject_id]['NSA id'])
-                ]
-            except KeyError:
-                gal = {}
-                raise KeyError(
-                    'Metadata does not contain valid NSA id (probably an older galaxy)'
-                )
-            fits_name = get_fits_location(gal)
-            angle = get_angle(gal, fits_name, np.array((512, 512))) % 180
-            gal['angle'] = angle
-            galaxy_info.loc[subject_id] = gal
+def get_frames(gal):
+    input_frames = get_input_frames(gal)
+    output_frame = get_output_frame(input_frames)
+    return input_frames, output_frame
 
-galaxy_info.apply(pd.Series).to_csv('gal-metadata.csv')
+
+if __name__ == '__main__':
+    galaxy_info = pd.Series([])
+    with tqdm(subjects.index.values, desc='Iterating over subjects') as bar:
+        for subject_id in bar:
+            # Grab the metadata of the subject we are working on
+            subject = subjects.loc[subject_id]
+            # And the NSA data for the galaxy (if it's a galaxy with NSA data,
+            # otherwise throw an error)
+            if metadata.loc[subject_id].get('NSA id', False) is not np.nan:
+                try:
+                    gal = df_nsa.drop_duplicates(
+                        subset='NSAID'
+                    ).set_index(
+                        'NSAID',
+                        drop=False
+                    ).loc[
+                        int(metadata.loc[subject_id]['NSA id'])
+                    ]
+                except KeyError:
+                    gal = {}
+                    raise KeyError(
+                        'Metadata does not contain valid NSA id (probably an older galaxy)'
+                    )
+                original_fits_names, montage_fits_name = get_frames(gal)
+                try:
+                    angles = transform_angle(
+                        original_fits_names[0],
+                        montage_fits_name,
+                        gal['PETRO_PHI90']
+                    )
+                except OSError as e:
+                    print(subject_id, e)
+                    continue
+                gal['montage_angle'] = angles['montaged']
+                gal['original_angle'] = angles['original']
+                # legacy
+                gal['angle'] = angles['montaged']
+                galaxy_info.loc[subject_id] = gal
+
+    galaxy_info.apply(pd.Series).to_csv('gal-metadata.csv')

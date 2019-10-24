@@ -10,8 +10,8 @@ import json
 # import requests
 from PIL import Image
 # from astropy.wcs import WCS
-import gzbuilder_analysis.spirals as spirals
-from gzbuilder_analysis.spirals.deprojecting import deproject_array
+import gzbuilder_analysis.aggregation.spirals as spirals
+from gzbuilder_analysis.aggregation.spirals.deprojecting import deproject_array
 from shapely.geometry import box, Point
 from shapely.affinity import rotate as shapely_rotate, scale as shapely_scale
 
@@ -108,6 +108,10 @@ metadata = subjects.metadata.apply(json.loads).apply(pd.Series)
 #     vec = np.dot(rot, dec_line - center_pix)
 #     rotation_angle = 90 - np.rad2deg(np.arctan2(vec[1], vec[0])) - 90
 #     return rotation_angle
+
+
+def get_galaxy(subject_id, imShape=(512, 512)):
+    return gal_angle_df.loc[subject_id]
 
 
 def get_galaxy_and_angle(subject_id, imShape=(512, 512)):
