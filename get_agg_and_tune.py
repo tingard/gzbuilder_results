@@ -125,13 +125,32 @@ agg_model = Model(
     psf=psf,
     sigma_image=sigma_image
 )
-
-res, tuned_model = fit_model(
+# tune the brightness to provide a good starting point
+params_to_fit = {
+    'disk':   ('I', 'Re'),
+    'bulge':  ('I', 'Re'),
+    'bar':    ('I', 'Re'),
+    'spiral': ('I', 'spread', 'falloff'),
+}
+res, partially_tuned_model_dict = fg.fit_model(
     agg_model,
-    params=cfg.FIT_PARAMS,
-    progress=args.progress,
-    options=dict(maxiter=200, disp=(not args.progress))
+    params=params_to_fit,
+    options=dict(maxiter=50)
 )
+
+# allow roll and position to vary
+params_to_fit2 = {
+    'disk':   ('mux', 'muy', 'roll', 'I', 'Re', 'q'),
+    'bulge':  ('mux', 'muy', 'roll', 'I', 'Re', 'q', 'n'),
+    'bar':    ('mux', 'muy', 'roll', 'I', 'Re', 'q', 'n', 'c'),
+    'spiral': ('I', 'spread', 'falloff'),
+}
+res, tuned_model_dict = fg.fit_model(
+    agg_model,
+    params=params_to_fit2,
+    options=dict(maxiter=500)
+)
+
 
 print(
     'Writing tuned aggregate model to',
@@ -139,4 +158,4 @@ print(
 )
 
 with open(os.path.join(args.output, f'agg/{subject_id}.json'), 'w') as f:
-    f.write(pg.make_json(tuned_model))
+    f.write(pg.make_json(tuned_model_dict))

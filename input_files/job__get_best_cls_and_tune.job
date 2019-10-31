@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=tunemodels --output=/users/tingard/tune_models_logs/slurm-%A_%a.out
+#SBATCH --job-name=best_individual_model_tuning --output=/users/tingard/tune_models_logs/slurm-%A_%a.out
 # run using
 # sbatch --array=0-295%20 job__get_best_cls_and_tune.job -p QUEUE_NAME
 source /users/tingard/modules
