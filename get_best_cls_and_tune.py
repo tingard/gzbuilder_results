@@ -10,7 +10,7 @@ except ModuleNotFoundError:
     from gzbuilder_analysis.rendering import calculate_model
 import gzbuilder_analysis.fitting as fg
 import gzbuilder_analysis.config as cfg
-from gzbuilder_analysis.fitting.model import Model, fit_model
+from gzbuilder_analysis.fitting import Model, fit_model
 from PIL import Image
 import argparse
 
@@ -94,7 +94,11 @@ print('\tElapsed time: {:.2f}'.format(time() - t0))
 models_output = os.path.join(lib, 'volunteer_models')
 os.makedirs(models_output, exist_ok=True)
 pd.concat(
-    (models.rename('model'), chisq.rename('chisq')),
+    (
+        models.rename('model'),
+        chisq.rename('chisq'),
+        rendered.rename('rendered')
+    ),
     axis=1
 ).to_pickle(
     os.path.join(models_output, f'{subject_id}.pickle')
@@ -118,6 +122,7 @@ res, tuned_model = fit_model(
     options=dict(maxiter=200, disp=(not args.progress))
 )
 
+print(tuned_model)
 os.makedirs(args.output, exist_ok=True)
 with open(os.path.join(args.output, f'bi/{subject_id}.json'), 'w') as f:
     f.write(pg.make_json(tuned_model))

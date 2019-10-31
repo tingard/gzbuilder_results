@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=tunemodels --output=/users/tingard/tune_models_logs/slurm-%A_%a.out
-#SBATCH -p sciama4.q
 # run using
 # sbatch --array=0-295%20 job__get_agg_cls_and_tune.job -p QUEUE_NAME
 source /users/tingard/modules

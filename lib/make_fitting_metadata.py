@@ -48,6 +48,7 @@ def get_data(subject_id):
         galaxy_data=im_scaled,
         montage_wcs=montage_wcs,
         original_wcs=original_wcs,
+        multiplier=diff_data['multiplier'],
         sigma_image=sd_scaled,
         width=diff_data['width'],
         size_diff=diff_data['width'] / diff_data['imageWidth'],

@@ -5,3 +5,5 @@ lib/df_nsa.pkl
 lib/lackner_nb1.csv
 lib/lackner_nb4.csv
 lib/frame_data
+lib/volunteer_models
+lib/clusters

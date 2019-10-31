@@ -4,10 +4,11 @@ import pandas as pd
 import json
 import lib.galaxy_utilities as gu
 from astropy.io import fits
-import requests
 from tqdm import tqdm
 
-aggregated_models = pd.read_pickle('lib/aggregation_results.pickle')
+
+aggregated_models = pd.read_pickle('lib/models.pickle')['tuned_aggregate']
+
 
 def get_pnonebulge(gal):
     none = gal['t05_bulge_prominence_a10_no_bulge_debiased']
@@ -83,11 +84,10 @@ if __name__ == '__main__':
                 ).sum() / len(ann_for_s),
                 'GZ2 bar fraction': get_pbar(gz2_gal),
             }
-            bar = aggregated_models.loc[subject_id].Model['bar']
-            bar_length = bar['rEff'] if bar is not None else np.nan
+            bar = aggregated_models.loc[subject_id]['bar']
+            bar_length = bar['Re'] if bar is not None else np.nan
             bar_lengths.loc[subject_id] = bar_length
 
-    bulge_fractions.to_pickle(os.path.join(loc, 'lib/bulge_fractions.pkl'))
 
     bar_fractions['Strongly barred'] = bar_fractions['GZ2 bar fraction'] > 0.5
     bar_fractions['No bar'] = bar_fractions['GZ2 bar fraction'] < 0.2

@@ -7,7 +7,7 @@ import pandas as pd
 import gzbuilder_analysis.parsing as pg
 import gzbuilder_analysis.aggregation as ag
 import gzbuilder_analysis.config as cfg
-from gzbuilder_analysis.fitting.model import Model, fit_model
+from gzbuilder_analysis.fitting import Model, fit_model, chisq
 # from shapely.affinity import scale
 # from descartes import PolygonPatch
 from PIL import Image
@@ -49,11 +49,14 @@ print(f'Working on {subject_id}')
 
 im = np.array(Image.open('lib/subject_data/{}/image.png'.format(subject_id)))[::-1]
 classifications = pd.read_csv('lib/galaxy-builder-classifications.csv', index_col=0)
-fm = pd.read_pickle('lib/fitting_metadata.pkl').loc[subject_id]
+fitting_metadata = pd.read_pickle('lib/fitting_metadata.pkl')
+fm = fitting_metadata.loc[subject_id]
 data = fm['galaxy_data']
-sigma = fm['sigma_image']
+sigma_image = fm['sigma_image']
 psf = fm['psf']
+
 gal = pd.read_csv('lib/gal-metadata.csv', index_col=0).loc[subject_id]
+
 c = classifications.query('subject_ids == {}'.format(subject_id))
 
 zoo_models = c.apply(
@@ -75,24 +78,6 @@ models = scaled_models.apply(
 )
 
 
-# def plot_models(model_geom, ax):
-#     ls = dict(disk='-.', bulge=':', bar='--')
-#     cs = dict(disk='C0', bulge='C1', bar='C2')
-#     try:
-#         assert len(ax) >= 3
-#     except TypeError:
-#         ax = [ax] * 3
-#     for i, k in enumerate(('disk', 'bulge', 'bar')):
-#         ax[i].add_patch(PolygonPatch(
-#             scale(model_geom[k], 3, 3),
-#             ec='none', fc=cs[k], alpha=0.4, zorder=3
-#         ))
-#         ax[i].add_patch(PolygonPatch(
-#             scale(model_geom[k], 3, 3),
-#             ec='k', fc='none', ls=ls[k], alpha=1, lw=2, zorder=3
-#         ))
-
-
 def cluster_components(models, data, ba, angle):
     model_cluster = ag.cluster_components(
         models=models, image_size=data.shape,
@@ -103,15 +88,14 @@ def cluster_components(models, data, ba, angle):
 
 
 ba = gal['PETRO_BA90']
-
-print('Clustering all components')
-# print('- In Zooniverse coordinates')
-# t0 = time()
-# zoo_result = cluster_components(zoo_models, im, ba, np.rad2deg(gal['montage_angle']))
-# print('\tElapsed time: {:.2f}'.format(time() - t0))
-print('- In SDSS frame coordinates')
+phi = np.rad2deg(gal['original_angle'])
+print('Clustering all components in SDSS frame coordinates')
 t0 = time()
-clusters, agg_model = cluster_components(models, fm['galaxy_data'], ba, np.rad2deg(gal['original_angle']))
+clusters, agg_model_dict = cluster_components(
+    models,
+    fm['galaxy_data'],
+    ba, phi,
+)
 print('\tElapsed time: {:.2f}'.format(time() - t0))
 
 # save the results
@@ -120,30 +104,28 @@ os.makedirs(cluster_output, exist_ok=True)
 with open(os.path.join(cluster_output, f'{subject_id}.pickle'), 'wb') as f:
     pickle.dump(clusters, f)
 
-raw_agg_model_output = os.path.join(lib, 'agg_models')
-os.makedirs(raw_agg_model_output, exist_ok=True)
-print(
-    'Writing aggregate model to',
-    os.path.join(raw_agg_model_output, f'{subject_id}.json')
-)
-with open(os.path.join(raw_agg_model_output, f'{subject_id}.json'), 'w') as f:
-    f.write(pg.make_json(agg_model))
+raw_agg_model_output_dir = os.path.join(lib, 'agg_models')
+os.makedirs(raw_agg_model_output_dir, exist_ok=True)
+raw_agg_model_output = os.path.join(raw_agg_model_output_dir, f'{subject_id}.json')
+print(f'Writing aggregate model to {raw_agg_model_output}')
+with open(raw_agg_model_output, 'w') as f:
+    f.write(pg.make_json(agg_model_dict))
 
+
+fm = fitting_metadata.loc[subject_id]
+data = fm['galaxy_data']
+sigma_image = fm['sigma_image']
+psf = fm['psf']
 
 # now to tune the model, this can take some time
 print('Tuning model')
 agg_model = Model(
-    agg_model,
+    agg_model_dict,
     data,
     psf=psf,
-    sigma_image=sigma
+    sigma_image=sigma_image
 )
-# res, partially_tuned_model = fit_model(
-#     agg_model,
-#     params=cfg.SLIDER_FIT_PARAMS,
-#     progress=args.progress,
-#     options=dict(maxiter=200, disp=(not args.progress))
-# )
+
 res, tuned_model = fit_model(
     agg_model,
     params=cfg.FIT_PARAMS,
