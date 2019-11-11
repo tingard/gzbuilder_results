@@ -7,7 +7,7 @@ import pandas as pd
 import gzbuilder_analysis.parsing as pg
 import gzbuilder_analysis.aggregation as ag
 import gzbuilder_analysis.config as cfg
-from gzbuilder_analysis.fitting import Model, fit_model, chisq
+import gzbuilder_analysis.fitting as fg
 # from shapely.affinity import scale
 # from descartes import PolygonPatch
 from PIL import Image
@@ -119,7 +119,7 @@ psf = fm['psf']
 
 # now to tune the model, this can take some time
 print('Tuning model')
-agg_model = Model(
+agg_model = fg.Model(
     agg_model_dict,
     data,
     psf=psf,
@@ -135,7 +135,8 @@ params_to_fit = {
 res, partially_tuned_model_dict = fg.fit_model(
     agg_model,
     params=params_to_fit,
-    options=dict(maxiter=50)
+    progress=args.progress,
+    options=dict(maxiter=50, disp=(not args.progress))
 )
 
 # allow roll and position to vary
@@ -148,7 +149,8 @@ params_to_fit2 = {
 res, tuned_model_dict = fg.fit_model(
     agg_model,
     params=params_to_fit2,
-    options=dict(maxiter=500)
+    progress=args.progress,
+    options=dict(maxiter=500, disp=(not args.progress))
 )
 
 

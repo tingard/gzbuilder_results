@@ -61,7 +61,7 @@ def load_model_file(loc):
 
 def get_best_model(f):
     df = pd.read_pickle(f)
-    return df.model[df.chisq.idxmin()]
+    return df.model[df.chisq.idxmin()], df.chisq.min()
 
 
 def get_chisq(row):
@@ -82,11 +82,15 @@ agg_models = pd.Series({
 }, name='aggregate')
 
 
-bi_models = pd.Series({
-    get_subject_id(f): get_best_model(os.path.join(args.volunteer_models, f))
-    for f in os.listdir(args.volunteer_models)
-    if filter_model_file(f)
-}, name='best_individual')
+bi_models = pd.DataFrame.from_dict(
+    {
+        get_subject_id(f): get_best_model(os.path.join(args.volunteer_models, f))
+        for f in os.listdir(args.volunteer_models)
+        if filter_model_file(f)
+    },
+    orient='index',
+    columns=('best_individual', 'best_individual_chisq')
+)
 
 tuned_agg_models = pd.Series({
     get_subject_id(f): load_model_file(os.path.join(tuned_agg_models_dir, f))

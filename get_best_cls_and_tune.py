@@ -124,7 +124,8 @@ params_to_fit = {
 res, partially_tuned_model_dict = fg.fit_model(
     best_model,
     params=params_to_fit,
-    options=dict(maxiter=50)
+    progress=args.progress,
+    options=dict(maxiter=50, disp=(not args.progress))
 )
 
 # allow roll and position to vary
@@ -137,9 +138,10 @@ params_to_fit2 = {
 res, tuned_model_dict = fg.fit_model(
     best_model,
     params=params_to_fit2,
-    options=dict(maxiter=500)
+    progress=args.progress,
+    options=dict(maxiter=500, disp=(not args.progress))
 )
 
 os.makedirs(args.output, exist_ok=True)
 with open(os.path.join(args.output, f'bi/{subject_id}.json'), 'w') as f:
-    f.write(pg.make_json(tuned_model))
+    f.write(pg.make_json(tuned_model_dict))

@@ -54,8 +54,8 @@ if __name__ == '__main__':
         columns=('GZB fraction', 'GZ2 bar fraction'),
     )
     bar_lengths = pd.Series([], name='GZB bar length')
-    with tqdm(sid_list) as bar:
-        for subject_id in bar:
+    with tqdm(sid_list) as progress_bar:
+        for subject_id in progress_bar:
             cls_for_s = gu.classifications.query(
                 '(subject_ids == {}) & (workflow_version == 61.107)'.format(
                     subject_id
@@ -85,7 +85,11 @@ if __name__ == '__main__':
                 'GZ2 bar fraction': get_pbar(gz2_gal),
             }
             bar = aggregated_models.loc[subject_id]['bar']
-            bar_length = bar['Re'] if bar is not None else np.nan
+            try:
+                bar_length = bar['Re'] if bar is not None else np.nan
+            except KeyError:
+                print(f'Error with subject {subject_id}')
+                bar_length = np.nan
             bar_lengths.loc[subject_id] = bar_length
 
 

@@ -1,9 +1,0 @@
-#!/bin/bash
-#SBATCH --job-name=tunemodels --output=/users/tingard/tune_models_logs/slurm-%A_%a.out
-#SBATCH -p sciama4.q
-# run using
-# sbatch --array=0-295 job__tune_models.job -p QUEUE_NAME
-source ~/modules
-python /users/tingard/gzbuilder_results/tune_model.py \
-    --index $SLURM_ARRAY_TASK_ID \
-    --output /users/tingard/gzbuilder_results/output_files/tuned_models
