@@ -7,3 +7,4 @@ lib/lackner_nb4.csv
 lib/frame_data
 lib/volunteer_models
 lib/clusters
+lib/expert_models.pickle
