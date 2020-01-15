@@ -7,9 +7,7 @@ import argparse
 def convert(infile, density=300, resize='25%'):
     assert infile.split('.')[-1] == 'pdf'
     outfile = '.'.join(infile.split('.')[:-1] + ['png'])
-    s = 'convert -density {density} {input} -resize {resize} {out}'.format(
-        input=infile, out=outfile, density=300, resize='25%'
-    )
+    s = f'convert -density {density} {infile} -resize {resize}% {outfile}'
     return subprocess.call(s, shell=True)
 
 

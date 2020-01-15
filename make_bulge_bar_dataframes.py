@@ -31,6 +31,10 @@ def get_pbar(gal):
     return gal['t03_bar_a06_bar_debiased'] / n
 
 
+def get_pbar_count(gal):
+    return gal['t03_bar_a06_bar_count'] + gal['t03_bar_a07_no_bar_count']
+
+
 def has_comp(annotation, comp=0):
     try:
         drawn_shapes = annotation[comp]['value'][0]['value']
@@ -83,6 +87,7 @@ if __name__ == '__main__':
                     lambda v: has_comp(v, comp=2)
                 ).sum() / len(ann_for_s),
                 'GZ2 bar fraction': get_pbar(gz2_gal),
+                'GZ2 bar fraction count': get_pbar_count(gz2_gal),
             }
             bar = aggregated_models.loc[subject_id]['bar']
             try:

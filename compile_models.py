@@ -72,8 +72,8 @@ def get_chisq(row):
     return chisq(calculate_model(row.model, data.shape, psf), data, sigma_image)
 
 
-tuned_agg_models_dir = os.path.join(args.tuned_input, 'agg')
-tuned_bi_models_dir = os.path.join(args.tuned_input, 'bi')
+tuned_agg_models_dir = os.path.join(args.tuned_input, 'aggregate')
+tuned_bi_models_dir = os.path.join(args.tuned_input, 'best_individual')
 
 agg_models = pd.Series({
     get_subject_id(f): load_model_file(os.path.join(args.aggregate_models, f))
