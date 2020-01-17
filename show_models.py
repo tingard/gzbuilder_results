@@ -14,7 +14,6 @@ lib = join(loc, 'lib')
 
 models = pd.read_pickle(join(lib, 'models2.pickle'))
 fitting_metadata = pd.read_pickle(join(lib, 'fitting_metadata.pkl'))
-gal_df = pd.read_csv('lib/gal-metadata.csv', index_col=0)
 
 types = (
     'best_individual', 'tuned_best_individual',
@@ -24,7 +23,6 @@ names = [t.replace('_', ' ').capitalize() for t in types]
 with tqdm(models.index) as bar:
     for subject_id in bar:
         data = fitting_metadata.loc[subject_id]['galaxy_data']
-        petro_theta = gal_df.loc[subject_id]['PETRO_THETA']
 
         # functions for plotting
         def transform_patch(p):
@@ -53,7 +51,6 @@ with tqdm(models.index) as bar:
         ax = ax.ravel()
         for i, type in enumerate(types):
             ax[i].imshow(data, **imshow_kwargs)
-
             try:
                 model = models.loc[subject_id][type]
                 disk = aggregation.make_ellipse(model['disk'])
@@ -80,6 +77,8 @@ with tqdm(models.index) as bar:
         ax[3].set_ylabel('Arcseconds from galaxy centre')
         ax[0].set_ylabel('Arcseconds from galaxy centre')
         ax[2].set_ylabel('Arcseconds from galaxy centre')
+        plt.xlim(extent[0], extent[1])
+        plt.ylim(extent[2], extent[3])
         plt.tight_layout()
         plt.savefig(f'tuning_plots/{subject_id}.png', bbox_inches='tight')
         plt.close()

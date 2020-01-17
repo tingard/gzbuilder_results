@@ -22,7 +22,7 @@ import argparse
 
 
 INITIAL_N = 50
-MAX_N = 500
+MAX_N = 1000
 
 
 loc = os.path.abspath(os.path.dirname(__file__))
@@ -118,14 +118,21 @@ def get_original_params(p):
     disk_I = sersic_I(p['disk'])
     p_new[('disk', 'I')] = disk_I
     p_new.drop(('disk', 'L'), inplace=True)
+    if p_new[('disk', 'Re')] == 0:
+        p_new[('disk', 'I')] = 0
+        p_new[('disk', 'Re')] = 0.01
     for c in ('bulge', 'bar'):
         try:
             p_new[(c, 'Re')] = p[(c, 'Re')] * p[('disk', 'Re')]
             p_new[(c, 'mux')] = p[(c, 'mux')] + p[('disk', 'mux')]
             p_new[(c, 'muy')] = p[(c, 'muy')] + p[('disk', 'muy')]
-            comp_l = p[('disk', 'L')] * p[(c, 'L')] / (1 - p[(c, 'L')])
-            p_new[(c, 'L')] = comp_l
-            p_new[(c, 'I')] = sersic_I(p_new[c])
+            if p_new[(c, 'Re')] == 0 or disk_I == 0:
+                p_new[(c, 'Re')] = 0.01
+                p_new[(c, 'I')] = 0.0
+            else:
+                comp_l = p[('disk', 'L')] * p[(c, 'L')] / (1 - p[(c, 'L')])
+                p_new[(c, 'L')] = comp_l
+                p_new[(c, 'I')] = sersic_I(p_new[c])
             p_new.drop((c, 'L'), inplace=True)
         except KeyError:
             pass
@@ -140,19 +147,19 @@ lims_df['lower'] = -np.inf
 lims_df['upper'] = np.inf
 
 lims_df.loc[('disk', 'L')] = (0, np.inf)
-lims_df.loc[('disk', 'Re')] = (0, np.inf)
-lims_df.loc[('disk', 'q')] = (0.2, 1/0.2)
+lims_df.loc[('disk', 'Re')] = (0.01, np.inf)
+lims_df.loc[('disk', 'q')] = (0.2, 1)
 lims_df.drop(('disk', 'n'), inplace=True)  # do not fit disk n
 lims_df.drop(('disk', 'c'), inplace=True)  # do not fit disk c
 if model_obj['bulge'] is not None:
-    lims_df.loc[('bulge', 'L')] = (0, 1-0.001)
+    lims_df.loc[('bulge', 'L')] = (0, 1-0.01)
     lims_df.loc[('bulge', 'Re')] = (0, 1)
-    lims_df.loc[('bulge', 'q')] = (0.5, 1/0.5)
-    lims_df.loc[('bulge', 'n')] = (0.3, 5)
+    lims_df.loc[('bulge', 'q')] = (0.4, 1)
+    lims_df.loc[('bulge', 'n')] = (0.5, 5)
     lims_df.drop(('bulge', 'c'), inplace=True)  # do not fit bulge c
 if model_obj['bar'] is not None:
-    lims_df.loc[('bar', 'L')] = (0, 1-0.001)
-    lims_df.loc[('bar', 'Re')] = (0, 2)
+    lims_df.loc[('bar', 'L')] = (0, 1-0.01)
+    lims_df.loc[('bar', 'Re')] = (0, 1)
     lims_df.loc[('bar', 'q')] = (0.05, 2/3)
     lims_df.loc[('bar', 'n')] = (0.3, 5)
     lims_df.loc[('bar', 'c')] = (0.5, 6)
@@ -165,15 +172,18 @@ if len(model_obj['spiral']) > 0:
 lims_df.sort_index(inplace=True)
 
 
-# Initially only fit luminosity and size
+# Initially only fit luminosity
 lims_df_initial = lims_df.copy()
 
+lims_df_initial.drop(('disk', 'Re'), inplace=True)
 lims_df_initial.drop(('disk', 'q'), inplace=True)
 
 if model_obj['bulge'] is not None:
+    lims_df_initial.drop(('bulge', 'Re'), inplace=True)
     lims_df_initial.drop(('bulge', 'q'), inplace=True)
     lims_df_initial.drop(('bulge', 'n'), inplace=True)
 if model_obj['bar'] is not None:
+    lims_df_initial.drop(('bar', 'Re'), inplace=True)
     lims_df_initial.drop(('bar', 'q'), inplace=True)
     lims_df_initial.drop(('bar', 'n'), inplace=True)
     lims_df_initial.drop(('bar', 'c'), inplace=True)
@@ -201,6 +211,7 @@ def _func(p, model_obj, lims, all_params):
 
 
 # Perform initial tuning
+print('Initially optimizing', len(all_p.reindex_like(lims_df_initial)), 'parameters')
 if args.progress:
     pbar = tqdm(leave=True)
 
@@ -235,6 +246,7 @@ model_obj2 = fitting.Model(
 
 # Perform full optimization
 all_p2 = get_new_params(model_obj2.params.dropna())
+print('Optimizing', len(all_p2.reindex_like(lims_df)), 'parameters')
 if args.progress:
     pbar = tqdm(leave=True)
 
