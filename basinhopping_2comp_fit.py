@@ -128,7 +128,7 @@ with tqdm(fm.index, desc='Fitting subjects') as bar:
     for subject_id in bar:
         bar.set_description(f'Fitting subjects (minimize)    ')
         # subject_id = 21686598
-        if not os.path.isfile(f'2comp_fits/minima/{subject_id}.csv'):
+        if not os.path.isfile(f'2comp_fits_nb4/minima/{subject_id}.csv'):
             target = fm.loc[subject_id]['galaxy_data']
             cp_mask = _p.asarray(target.mask)
             cp_target = _p.asarray(target.data)
@@ -157,7 +157,7 @@ with tqdm(fm.index, desc='Fitting subjects') as bar:
 
             def _f(p):
                 kw = {k: v for k, v in zip(p0.index, p)}
-                kw.setdefault('bulge_n', 1)
+                kw.setdefault('bulge_n', 4)
                 render = bulge_disk_render(cx, cy, **kw)
                 downsampled_render = downsample(render, oversample_n, size=target.shape)
                 psf_conv_render = convolve(downsampled_render, cp_psf)
@@ -202,12 +202,12 @@ with tqdm(fm.index, desc='Fitting subjects') as bar:
                 p_global.rename('Basinhopping')
             ), axis=1).T
 
-            os.makedirs('2comp_fits/best_results', exist_ok=True)
-            comparison_df.to_csv(f'2comp_fits/best_results/{subject_id}.csv')
+            os.makedirs('2comp_fits_nb4/best_results', exist_ok=True)
+            comparison_df.to_csv(f'2comp_fits_nb4/best_results/{subject_id}.csv')
 
             # save the local minima
-            os.makedirs('2comp_fits/minima', exist_ok=True)
+            os.makedirs('2comp_fits_nb4/minima', exist_ok=True)
             minima.sort_values(by='chisq')\
-                .to_csv(f'2comp_fits/minima/{subject_id}.csv')
+                .to_csv(f'2comp_fits_nb4/minima/{subject_id}.csv')
         else:
             sleep(0.05)

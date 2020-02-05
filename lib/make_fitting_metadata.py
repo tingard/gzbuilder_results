@@ -1,5 +1,7 @@
 import os
 import numpy as np
+import json
+import requests
 try:
     import modin.pandas as pd
 except ImportError:
@@ -37,6 +39,27 @@ def get_data(subject_id):
     im_scaled = stacked_image / diff_data['multiplier']
     sd_scaled = sigma_image / diff_data['multiplier']
 
+    # we may need to correct for rotation for some subjects
+    r = requests.get(json.loads(gu.subjects.loc[subject_id].locations)['0'])
+    rotation_correction = 0
+    if r.ok:
+        subject_data = json.loads(r.text)
+        zoo_mask = np.array(subject_data['mask'])
+        zoo_gal = np.ma.masked_array(subject_data['imageData'], zoo_mask)
+        montaged_cutout = mkct.get_montaged_cutout(subject_id).data
+        montaged_mask = gu.get_diff_data(subject_id)['mask']
+        montaged_gal = np.ma.masked_array(montaged_cutout, montaged_mask)
+        loss = np.inf
+        for k in (0, 3):
+            d = montaged_gal / montaged_gal.max() - np.rot90(zoo_gal, k=k)
+            m = np.logical_xor(montaged_mask, np.rot90(zoo_gal.mask, k=k))
+            loss_ = np.nansum(np.abs(d)) / d.size + np.sum(m)
+            if loss_ < loss:
+                rotation_correction = 2 * np.pi * k / 4
+                loss = loss_
+    else:
+        # assume rotation is zero on failure
+        rotation_correction = 0
     # get the WCS objects so we can transform models back into the original
     # projection
     montage_wcs = mkct.get_montaged_cutout(subject_id).wcs
@@ -52,6 +75,7 @@ def get_data(subject_id):
         sigma_image=sd_scaled,
         width=diff_data['width'],
         size_diff=diff_data['width'] / diff_data['imageWidth'],
+        rotation_correction=rotation_correction,
     )
 
 

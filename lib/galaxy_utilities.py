@@ -3,11 +3,11 @@ is used to obtain fitting data from galaxy builder metadata and subject files.
 """
 
 import os
-# from tempfile import NamedTemporaryFile
+import requests
+from io import BytesIO
 import numpy as np
 import pandas as pd
 import json
-# import requests
 from PIL import Image
 # from astropy.wcs import WCS
 import gzbuilder_analysis.aggregation.spirals as spirals
@@ -162,6 +162,12 @@ def get_drawn_arms(subject_id, classifications=classifications):
 #
 # def get_image_data(subject_id):
 #     return get_diff_data(subject_id)
+
+def download_image(subject_id):
+    url = json.loads(subjects.loc[subject_id].locations)['1']
+    response = requests.get(url)
+    img = Image.open(BytesIO(response.content))
+    return img
 
 
 def get_image(subject_id):
