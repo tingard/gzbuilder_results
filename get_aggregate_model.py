@@ -22,24 +22,28 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--output', '-O', metavar='/path/to/output',
                     default=join(loc, 'output_files/aggregation_results'),
                     help='Where to save the output tuned model')
-
+parser.add_argument('--subjects', metavar='subject_ids', type=int, nargs='+',
+                    help='Subject ids to work on (otherwise will run all)')
 args = parser.parse_args()
 os.makedirs(args.output, exist_ok=True)
 classifications = pd.read_csv('lib/galaxy-builder-classifications.csv', index_col=0)
+classifications.created_at = pd.to_datetime(classifications.created_at)
 fitting_metadata = pd.read_pickle('lib/fitting_metadata.pkl')
 gal_df = pd.read_csv('lib/gal-metadata.csv', index_col=0)
 
-with tqdm(fitting_metadata.index) as pbar:
+with tqdm(args.subjects or fitting_metadata.index) as pbar:
     for subject_id in pbar:
-        pbar.set_description(f'Subject: {subject_id}')
-        # if os.path.isfile(join(args.output, f'{subject_id}.pkl.gz')):
-        #     sleep(0.1)
-        #     continue
+        pbar.set_description('Subject: {}'.format(subject_id))
         im = np.array(Image.open('lib/subject_data/{}/image.png'.format(subject_id)))[::-1]
         fm = fitting_metadata.loc[subject_id]
         data = fm['galaxy_data']
         gal = gal_df.loc[subject_id]
-        c = classifications.query('subject_ids == {}'.format(subject_id))
+        # take the first 30 classifications recieved for this galaxy
+        c = (classifications
+            .query('subject_ids == {}'.format(subject_id))
+            .sort_values(by='created_at')
+            .head(30)
+        )
         zoo_models = c.apply(
             pg.parse_classification,
             axis=1,
@@ -58,13 +62,16 @@ with tqdm(fitting_metadata.index) as pbar:
                 fm.rotation_correction
             ),
         )
-        models = scaled_models.apply(
+        models = rotated_models.apply(
             pg.reproject_model,
             wcs_in=fm['montage_wcs'], wcs_out=fm['original_wcs']
         )
         sanitized_models = models.apply(pg.sanitize_model)
         try:
             aggregation_result = ag.AggregationResult(sanitized_models, data)
-            pd.to_pickle(aggregation_result, join(args.output, f'{subject_id}.pkl.gz'))
+            pd.to_pickle(
+                aggregation_result,
+                join(args.output, '{}.pkl.gz'.format(subject_id))
+            )
         except TypeError:
-            print(f'No disk cluster for {subject_id}')
+            print('No disk cluster for {}'.format(subject_id))

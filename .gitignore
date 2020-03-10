@@ -11,3 +11,4 @@ lib/expert_models.pickle
 lib/spiral_arms.pickle
 lib/unweighted_spirals.pickle
 lib/merged_arms.pickle
+fitting_plots

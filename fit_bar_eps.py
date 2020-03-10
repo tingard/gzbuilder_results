@@ -47,7 +47,12 @@ with tqdm(fitting_metadata.index) as pbar:
             NSA_GZ[1].data['dr7objid'] == np.int64(metadata['SDSS dr7 id'])
         ]
         gz2_pbar[subject_id] = get_pbar(gal[0]) if len(gal) > 0 else np.nan
-        c = classifications.query('subject_ids == {}'.format(subject_id))
+        # take the first 30 classifications recieved for this galaxy
+        c = (classifications
+            .query('subject_ids == {}'.format(subject_id))
+            .sort_values(by='created_at')
+            .head(30)
+        )
         zoo_models = c.apply(
             pg.parse_classification,
             axis=1,
@@ -100,7 +105,7 @@ def func(eps, BAR_MIN_SAMPLES):
         elif gz2_pbar[subject_id] > 0.5 and np.max(clf.labels_) >= 0:
             # gz2 says likely to have a bar, and we have a bar
             n_correct += 1
-    return -n_correct
+    return -n_correct + eps / 100
 
 
 res = {}
@@ -109,7 +114,7 @@ for i in range(3, 8):
     if r['success']:
         res[i] = r
         print('Fun: {} / {}: min_samples={} eps={}'.format(
-            -r['fun'], best_score, i, r['x']
+            -r['fun'] + r['x'], best_score, i, r['x']
         ))
 
 pd.to_pickle(res, 'bar_eps_fit_result.pkl.gz')
