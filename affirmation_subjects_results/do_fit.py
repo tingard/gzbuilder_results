@@ -47,120 +47,6 @@ agg_fit_metadata = pd.read_pickle(
 )
 
 
-# def plot_fit_result(
-#     name, target, mask, multiplier, sigma,
-#     op, agg_res,
-#     starting_model, final_model, final_gal
-# ):
-#     f, ax = plt.subplots(nrows=2, ncols=3, figsize=(15*1.2, 8*1.2), dpi=80)
-#     plt.subplots_adjust(wspace=0, hspace=0.1)
-#     s = AsinhStretch()
-#     masked_target = ops.index_update(target, mask, np.nan)
-#     lm = s([
-#         min(
-#             np.nanmin(masked_target),
-#             final_gal.min()
-#         ),
-#         max(
-#             np.nanmax(masked_target),
-#             final_gal.max()
-#         )
-#     ])
-#     ax[0, 0].imshow(
-#         s(masked_target),
-#         vmin=lm[0], vmax=lm[1], cmap='gray_r', origin='lower'
-#     )
-#     ax[0, 1].imshow(
-#         s(final_gal),
-#         vmin=lm[0], vmax=lm[1], cmap='gray_r', origin='lower'
-#     )
-#     d = ops.index_update((final_gal - target)/sigma, mask, np.nan)
-#     l2 = np.nanmax(np.abs(d))
-#     c = ax[0][2].imshow(d, vmin=-l2, vmax=l2, cmap='seismic', origin='lower')
-#     cbar = plt.colorbar(c, ax=ax, shrink=0.475, anchor=(0, 1))
-#     cbar.ax.set_ylabel(r'Residual, units of $\sigma$')
-#     ax[1, 0].imshow(
-#         s(masked_target),
-#         vmin=lm[0], vmax=lm[1], cmap='gray_r', origin='lower'
-#     )
-#     ax[1, 1].imshow(
-#         s(masked_target),
-#         vmin=lm[0], vmax=lm[1], cmap='gray_r', origin='lower'
-#     )
-#
-#     initial_disk = scale(
-#         ag.make_ellipse(starting_model['disk']), SCALE_FACTOR, SCALE_FACTOR
-#     )
-#     final_disk = scale(
-#         ag.make_ellipse(final_model['disk']), SCALE_FACTOR, SCALE_FACTOR
-#     )
-#     ax[1, 0].add_patch(PolygonPatch(initial_disk, ec='C0', fc='none'))
-#     ax[1, 1].add_patch(PolygonPatch(final_disk, ec='C0', fc='none'))
-#     if starting_model['bulge'] is not None:
-#         initial_bulge = scale(
-#             ag.make_ellipse(starting_model['bulge']),
-#             SCALE_FACTOR, SCALE_FACTOR
-#         )
-#         ax[1, 0].add_patch(PolygonPatch(initial_bulge, ec='C1', fc='none'))
-#     if final_model['bulge'] is not None:
-#         final_bulge = scale(
-#             ag.make_ellipse(final_model['bulge']),
-#             SCALE_FACTOR, SCALE_FACTOR
-#         )
-#         ax[1, 1].add_patch(PolygonPatch(final_bulge, ec='C1', fc='none'))
-#     if starting_model['bar'] is not None:
-#         initial_bar = scale(
-#             ag.make_box(starting_model['bar']),
-#             SCALE_FACTOR, SCALE_FACTOR
-#         )
-#         ax[1, 0].add_patch(PolygonPatch(initial_bar, ec='C2', fc='none'))
-#     if final_model['bar'] is not None:
-#         final_bar = scale(
-#             ag.make_box(final_model['bar']),
-#             SCALE_FACTOR, SCALE_FACTOR
-#         )
-#         ax[1, 1].add_patch(PolygonPatch(final_bar, ec='C2', fc='none'))
-#     for i in range(op.n_spirals):
-#         ax[1, 0].plot(*fit.log_spiral(
-#             t_min=starting_model['spiral']['t_min.{}'.format(i)],
-#             t_max=starting_model['spiral']['t_max.{}'.format(i)],
-#             A=starting_model['spiral']['A.{}'.format(i)],
-#             phi=starting_model['spiral']['phi.{}'.format(i)],
-#             **starting_model['disk']
-#         ).T, 'r')
-#     for a in agg_res.spiral_arms:
-#         ax[1, 0].plot(*a.reprojected_log_spiral.T, 'r')
-#     delta_roll = (
-#         final_model['disk']['roll']
-#         - starting_model['disk']['roll']
-#     )
-#     for i in range(op.n_spirals):
-#         try:
-#             ax[1][1].plot(*fit.log_spiral(
-#                 t_min=final_model['spiral']['t_min.{}'.format(i)],
-#                 t_max=final_model['spiral']['t_max.{}'.format(i)],
-#                 A=final_model['spiral']['A.{}'.format(i)],
-#                 phi=final_model['spiral']['phi.{}'.format(i)],
-#                 delta_roll=delta_roll,
-#                 **final_model['disk']
-#             ).T, 'r')
-#         except KeyError:
-#             # some spirals may have been removed if their intensity was set to 0
-#             pass
-#     ax[0, 0].set_title('Galaxy Image')
-#     ax[0, 1].set_title('Model after fitting')
-#     ax[0, 2].set_title('Residuals')
-#     ax[1, 0].set_title('Raw Aggregate model overlaid on galaxy')
-#     ax[1, 1].set_title('Fit model overlaid on galaxy')
-#     for a in ax.ravel():
-#         a.axis('off')
-#         a.set_xlim(0, target.shape[1])
-#         a.set_ylim(0, target.shape[0])
-#     os.makedirs('affirmation_subjects_results/fitting_plots', exist_ok=True)
-#     plt.savefig('affirmation_subjects_results/fitting_plots/{}.pdf'.format(name), bbox_inches='tight')
-#     plt.close()
-
-
 def do_subject(subject_id):
     fm = agg_fit_metadata.loc[subject_id]
     name = base_models.loc[subject_id]['name']
@@ -247,6 +133,16 @@ def do_subject(subject_id):
     bar_frac = bar_L / (disk_spiral_L + bulge_L + bar_L)
 
     deparametrized_model = from_reparametrization(final_model, o)
+
+    ftol = 2.220446049250313e-09
+
+    # Also calculate Hessian-errors
+    errs = np.sqrt(
+        max(1, abs(res_full.fun))
+        * ftol
+        * np.diag(res_full.hess_inv.todense())
+    )
+
     os.makedirs('affirmation_subjects_results/tuning_results', exist_ok=True)
     pd.to_pickle(
         dict(
@@ -259,6 +155,7 @@ def do_subject(subject_id):
             r_band_luminosity=float(gal_L),
             bulge_frac=float(bulge_frac),
             bar_frac=float(bar_frac),
+            errs=errs,
             keys=o.keys,
         ),
         'affirmation_subjects_results/tuning_results/{}.pickle.gz'.format(name)

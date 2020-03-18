@@ -139,6 +139,15 @@ def do_subject(subject_id):
 
     deparametrized_model = from_reparametrization(final_model, o)
 
+    ftol = 2.220446049250313e-09
+
+    # Also calculate Hessian-errors
+    errs = np.sqrt(
+        max(1, abs(res_full.fun))
+        * ftol
+        * np.diag(res_full.hess_inv.todense())
+    )
+
     os.makedirs('output_files/tuning_results', exist_ok=True)
     pd.to_pickle(
         dict(
@@ -150,6 +159,7 @@ def do_subject(subject_id):
             r_band_luminosity=float(gal_L),
             bulge_frac=float(bulge_frac),
             bar_frac=float(bar_frac),
+            errs=errs,
             keys=o.keys,
         ),
         'output_files/tuning_results/{}.pickle.gz'.format(subject_id)
