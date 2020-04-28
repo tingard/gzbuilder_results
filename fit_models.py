@@ -55,9 +55,7 @@ def do_subject(subject_id):
     agg_res = pd.read_pickle(
         'output_files/aggregation_results/{}.pkl.gz'.format(subject_id)
     )
-    # temp fix to only run on galaxies with bars
-    if agg_res.model.get('bar', None) is None:
-        return
+
     o = Optimizer(
         agg_res,
         *fm[['psf', 'galaxy_data', 'sigma_image']],
