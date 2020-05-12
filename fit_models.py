@@ -10,8 +10,9 @@ from jax import ops
 from scipy.optimize import minimize
 from tqdm import tqdm
 from gzbuilder_analysis.fitting.reparametrization import from_reparametrization
-from gzbuilder_analysis.fitting.optimizer import Optimizer, render_comps
-from gzbuilder_analysis.fitting.misc import psf_conv, get_luminosity_keys, \
+from gzbuilder_analysis.fitting.optimizer import Optimizer
+from gzbuilder_analysis.rendering import psf_conv, render_comps
+from gzbuilder_analysis.fitting.misc import get_luminosity_keys, \
     remove_zero_brightness_components, lower_spiral_indices, correct_spirals, \
     correct_axratio
 
