@@ -88,14 +88,14 @@ metadata = subjects.metadata.apply(json.loads).apply(pd.Series)
 #
 # def get_angle(gal, fits_name, image_size=np.array([512, 512])):
 #     wFits = WCS(fits_name)
-#     # edit to center on the galaxy
+#     # edit to centre on the galaxy
 #     wFits.wcs.crval = [float(gal['RA']), float(gal['DEC'])]
 #     wFits.wcs.crpix = image_size
 #
 #     r = 4 * float(gal['PETRO_THETA']) / 3600
 #     phi = float(gal['PETRO_PHI90'])
 #
-#     center_pix, dec_line = np.array(wFits.all_world2pix(
+#     centre_pix, dec_line = np.array(wFits.all_world2pix(
 #         [gal['RA'], gal['RA']],
 #         [gal['DEC'], gal['DEC'] + r],
 #         0
@@ -105,7 +105,7 @@ metadata = subjects.metadata.apply(json.loads).apply(pd.Series)
 #         [np.cos(np.deg2rad(phi)), -np.sin(np.deg2rad(phi))],
 #         [np.sin(np.deg2rad(phi)), np.cos(np.deg2rad(phi))]
 #     ]
-#     vec = np.dot(rot, dec_line - center_pix)
+#     vec = np.dot(rot, dec_line - centre_pix)
 #     rotation_angle = 90 - np.rad2deg(np.arctan2(vec[1], vec[0])) - 90
 #     return rotation_angle
 

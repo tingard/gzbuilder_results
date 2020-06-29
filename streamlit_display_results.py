@@ -167,9 +167,9 @@ def make_annotation_plot(agg_res, fm):
         ax.set_xlim(imshow_kwargs['extent'][:2])
         ax.set_ylim(imshow_kwargs['extent'][2:])
         if i % 2 == 0:
-            ax.set_ylabel('Arcseconds from center')
+            ax.set_ylabel('Arcseconds from centre')
         if i > 1:
-            ax.set_xlabel('Arcseconds from center')
+            ax.set_xlabel('Arcseconds from centre')
     fig.subplots_adjust(wspace=0.05, hspace=0.05)
     plt.tight_layout()
     st.pyplot()

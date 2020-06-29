@@ -45,7 +45,7 @@ errors.to_csv('lib/errors.csv')
 
 name_changes = {
     'Re': r'$r_e$',
-    'roll': r'$\phi$ (radians)',
+    'roll': r'$\psi$ (radians)',
     'mux': r'$\mu_x$ (arcseconds)',
     'muy': r'$\mu_y$ (arcseconds)',
     'q': r'$b/a$',

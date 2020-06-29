@@ -1,0 +1,91 @@
+// A diagram showing the stages involved in the Galaxy Builder project
+digraph "galaxy-builder-flowchart" {
+	height=14.850000000000001 rankdir=TB width=10.5
+	SDSS [label="Frames and PSFs were downloaded
+from SDSS SkyServer" shape=ellipse]
+	montage [label="Multiple SDSS frames were stacked using
+Montage (not error conserving)" shape=ellipse]
+	direct_stacking [label="Multiple SDSS frames were stacked
+directly (error conserving)" shape=ellipse]
+	classification [label="The Zooniverse collected 30 volunteer
+classifications per galaxy" shape=ellipse]
+	vol_view_image [label="The Volunteer was presented
+with a new galaxy image" shape=parallelogram]
+	vol_add_disk [label="The Volunteer drew an ellipse representing
+the galaxy's disk and adjusted the brightness
+and scale sliders" shape=parallelogram]
+	vol_add_bulge [label="The Volunteer drew an ellipse representing
+the galaxy's bulge and adjusted the brightness,
+scale and Sérsic index sliders" shape=parallelogram]
+	vol_add_bar [label="The Volunteer drew a rectangle representing
+the galaxy's bar and adjusted the brightness,
+scale, Sérsic index and boxyness sliders" shape=parallelogram]
+	vol_add_spiral [label="The Volunteer drew any number of poly-lines
+representing the galaxy's spirals and
+adjusted the brightness and scale sliders" shape=parallelogram]
+	vol_submit_classification [label="The Volunteer submitted their finished
+model to the Zooniverse" shape=parallelogram]
+	disc [label="Volunteer drawn discs were clustered
+using Jaccard distance" shape=rectangle]
+	agg_disc [label="An \"aggregate disc\" was
+calculated" shape=rectangle]
+	bulge [label="Volunteer drawn bulges were clustered
+using Jaccard distance" shape=rectangle]
+	agg_bulge [label="An \"aggregate bulge\" was
+calculated" shape=rectangle]
+	bar [label="Volunteer drawn bars were clustered
+using Jaccard distance" shape=rectangle]
+	agg_bar [label="An \"aggregate bar\" was
+calculated" shape=rectangle]
+	spiral [label="Volunteer drawn spiral poly-lines
+were clustered using
+the custom distance metric" shape=rectangle]
+	agg_spiral [label="Clustered drawn spirals were cleaned using
+grouped Local Outlier Factor" shape=rectangle]
+	fit_log_spiral [label="Logarithmic spirals were fitted
+to clustered arm points" shape=rectangle]
+	agg_model [label="The Aggregate model was created"]
+	tuning [label="The Aggregate model was fit using
+computational optimization" shape=rectangle]
+	subgraph cluster_image_preparation {
+		color=lightgrey
+		label="Image preparation"
+		SDSS -> montage
+		SDSS -> direct_stacking
+	}
+	subgraph cluster_volunteer_workflow {
+		color=lightgrey
+		label="Volunteer workflow"
+		vol_view_image -> vol_add_disk
+		vol_add_disk -> vol_add_bulge
+		vol_add_bulge -> vol_add_disk
+		vol_add_bulge -> vol_add_bar
+		vol_add_bar -> vol_add_bulge
+		vol_add_bar -> vol_add_spiral
+		vol_add_spiral -> vol_add_bar
+		vol_add_spiral -> vol_submit_classification
+	}
+	subgraph cluster_aggregation {
+		color=lightgrey
+		label="Aggregation process"
+		disc -> agg_disc
+		bulge -> agg_bulge
+		bar -> agg_bar
+		spiral -> agg_spiral
+		agg_disc -> fit_log_spiral
+		agg_spiral -> fit_log_spiral
+		agg_disc -> agg_model
+		agg_bulge -> agg_model
+		agg_bar -> agg_model
+		fit_log_spiral -> agg_model
+	}
+	montage -> classification
+	vol_submit_classification -> classification
+	classification -> vol_view_image
+	classification -> disc
+	classification -> bulge
+	classification -> bar
+	classification -> spiral
+	agg_model -> tuning
+	direct_stacking -> tuning
+}

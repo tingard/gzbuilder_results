@@ -29,11 +29,11 @@ def transform_angle(original_frame, montage_frame, angle):
             rotation(np.deg2rad(angle)),
             dec_line - centre
         ) + centre
-        center_pix, angle_line_pix = wcs[k].all_world2pix(
+        centre_pix, angle_line_pix = wcs[k].all_world2pix(
             [centre, line_of_angle],
             0
         )
-        new_angle = np.arctan2(*np.flip(angle_line_pix - center_pix))
+        new_angle = np.arctan2(*np.flip(angle_line_pix - centre_pix))
         angles[k] = -new_angle
     return angles
 
